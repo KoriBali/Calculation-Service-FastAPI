@@ -16,6 +16,7 @@ Backend service yang dirancang untuk melakukan kalkulasi teknis otomatis dan men
 ## Tech Stacks
 
 * **Language:** Python 3.12
+* **Web Framework:** FastAPI (ASGI) + Uvicorn, dijalankan lewat Gunicorn di production
 * **Dependency Management:** Pipenv
 * **Testing Framework:** Pytest (Target Coverage >80%)
 * **Linter:** Ruff
@@ -28,8 +29,8 @@ Kode dibagi menjadi **engine** (rumus, Python murni) dan **fitur** (pintu HTTP).
 ```text
 calculation_service/
 ├── app/
-│   ├── __init__.py            # create_app: error handler + registrasi blueprint
-│   ├── engine/                # MESIN: port python_calc, TANPA Flask/pydantic
+│   ├── __init__.py            # create_app: error handler + registrasi router
+│   ├── engine/                # MESIN: port python_calc, TANPA FastAPI/pydantic
 │   │   ├── sections.py        # penampang + massa pipa
 │   │   ├── materials.py       # tegangan izin per material
 │   │   ├── conditions/        # angin (std 1-6), gempa, 8 arah
@@ -41,10 +42,10 @@ calculation_service/
 │   │   ├── schemas/           # sub-schema input (pydantic)
 │   │   ├── adapters.py        # schema -> objek engine
 │   │   ├── mappers.py         # hasil engine -> JSON
-│   │   ├── errors.py          # 422 untuk input tidak valid
+│   │   ├── errors.py          # 400 body bukan JSON object, 422 input tidak valid
 │   │   └── response.py        # amplop {success, data, unique_code}
 │   └── <fitur>/               # contoh: section_check/
-│       ├── routes.py          # Blueprint + endpoint, tanpa logika hitung
+│       ├── routes.py          # APIRouter + endpoint, tanpa logika hitung
 │       ├── schemas.py         # request khusus fitur (memakai shared/schemas)
 │       ├── services.py        # schema -> adapter -> engine -> mapper
 │       └── mappers.py         # bentuk response fitur
@@ -54,7 +55,7 @@ calculation_service/
 └── tests/
     ├── engine/                # test unit engine (port dari python_calc/tests)
     ├── parity/                # fixture python_calc + test "angka harus identik"
-    └── api/                   # test endpoint lewat Flask test client
+    └── api/                   # test endpoint lewat FastAPI TestClient
 ```
 
 Aturan:
@@ -84,10 +85,19 @@ Aturan:
 
 ## Cara Menjalankan
 
-Untuk menjalankan script utama atau memulai service:
+Mode development (auto-reload bila `DEBUG=True`):
 ```bash
 python run.py
 ```
+
+Mode production (sama seperti `Dockerfile`/`Procfile`):
+```bash
+gunicorn run:app -k uvicorn_worker.UvicornWorker -w 4 -b 0.0.0.0:5000
+```
+
+Dokumentasi API otomatis tersedia di `http://localhost:5000/docs` (Swagger UI) dan `/redoc`.
+
+Lewat Docker Compose, service ini dipublish di port host **5001** (`calculation-service-fastapi`) supaya bisa jalan berdampingan dengan versi Flask di port 5000.
 
 ## Testing & Quality Gate
 

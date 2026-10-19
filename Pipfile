@@ -4,16 +4,18 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-flask = "*"
-gunicorn = "*"
-pydantic = "*"
-python-dotenv = "*"
-flask-cors = "*"
+fastapi = "*"
+uvicorn = {extras = ["standard"], version = "*"}
+uvicorn-worker = "*"
+gunicorn = "==25.3.0"
+pydantic = "==2.13.3"
+python-dotenv = "==1.2.2"
 
 [dev-packages]
-pytest = "*"
-pytest-cov = "*"
-ruff = "*"
+pytest = "==9.0.3"
+pytest-cov = "==7.1.0"
+ruff = "==0.15.11"
+httpx2 = "*"
 
 [requires]
 python_version = "3.12"

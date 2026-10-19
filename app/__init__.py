@@ -1,5 +1,7 @@
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import Config
 import os
 from datetime import datetime, timezone
@@ -7,65 +9,83 @@ from app.shared.errors import register_error_handlers
 
 
 def create_app():
-    app = Flask(__name__)
-    app.config.from_object(Config)
+    # redirect_slashes=False: "/health/" is 404 like Flask, not a 307 redirect.
+    app = FastAPI(
+        title="Kori Bali Calculation Service",
+        version="1.0.0",
+        debug=Config.DEBUG,
+        redirect_slashes=False,
+    )
 
-    CORS(app)
+    # Echo the request Origin like flask-cors CORS(app) instead of sending "*".
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=".*",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     API_KEY = os.getenv("SECRET_KEY", "secret_cadangan")
-    
+
     # Security with SECRET_KEY PENTING JANGAN DI HAPUS
-    # @app.before_request
-    # def validate_api_key():
+    # @app.middleware("http")
+    # async def validate_api_key(request: Request, call_next):
     #     incoming_key = request.headers.get("X-Internal-Key")
     #     print(incoming_key)
 
     #     if incoming_key != API_KEY:
-    #         abort(401, description="Unauthorized")
+    #         return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    #     return await call_next(request)
 
-    # ganti "*" di origin dengan URL Railway API Gateway
-    # CORS(app, resources={r"/api/*": {"origins": "*"}})\
+    # ganti "*" di allow_origins dengan URL Railway API Gateway
+    # app.add_middleware(CORSMiddleware, allow_origins=["*"])
 
 
     """Entry Point Start"""
-    @app.route("/")
+    @app.get("/")
     def root():
-        return jsonify({
+        return {
             "name": "Kori Bali Calculation Service",
             "status": "online",
             "version": "1.0.0",
             "server_time": datetime.now(timezone.utc).isoformat()
-        })
+        }
 
-    @app.route("/health")
+    @app.get("/health")
     def health():
-        return jsonify({
+        return {
             "status": "healthy"
-        })
-    
-    @app.errorhandler(404)
-    def not_found(error):
-        return jsonify({
-            "error": "Route not found",
-            "path": request.path
-        }), 404
+        }
 
-    @app.errorhandler(500)
-    def internal_error(error):
-        return jsonify({
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, error: StarletteHTTPException):
+        if error.status_code == 404:
+            return JSONResponse({
+                "error": "Route not found",
+                "path": request.url.path
+            }, status_code=404)
+        return JSONResponse(
+            {"detail": error.detail},
+            status_code=error.status_code,
+            headers=getattr(error, "headers", None),
+        )
+
+    @app.exception_handler(Exception)
+    async def internal_error(request: Request, error: Exception):
+        return JSONResponse({
             "error": "Internal server error"
-        }), 500
+        }, status_code=500)
     """Entry Point End"""
-    
+
     register_error_handlers(app)
 
-    # Register Blueprints
+    # Register Routers
 
     # add the import here
-    from app.section_check.routes import section_check_bp
+    from app.section_check.routes import section_check_router
 
-    # add the blueprint here
-    app.register_blueprint(section_check_bp)
+    # add the router here
+    app.include_router(section_check_router)
 
 
     return app

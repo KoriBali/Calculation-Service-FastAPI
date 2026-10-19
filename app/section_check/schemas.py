@@ -14,13 +14,38 @@ class SectionCheckRequest(ApiModel):
     ``overhead_wires`` is not accepted yet (waits for decision D6).
     """
 
-    wind: WindInput
-    seismic: SeismicInput | None = None
-    overdesign_factor: PositiveFloat = 1.0
-    base_elevation_m: float = 0.0
-    poles: Annotated[list[PoleSegmentInput], Field(min_length=1)]
-    direct_objects: list[DirectObjectInput] = Field(default_factory=list)
-    evaluated_positions_m: Annotated[list[float], Field(min_length=1)]
+    wind: WindInput = Field(
+        description="Kondisi angin. design_standard menentukan field lain yang wajib dikirim."
+    )
+    seismic: SeismicInput | None = Field(
+        default=None,
+        description=(
+            'Kondisi seismik (opsional). {"position": "Ground", "k_value": ...} atau '
+            '{"position": "Rooftop", "seismic_class": "A"|"B"|"S"}. '
+            "Kalau tidak dikirim, hanya cek angin yang dihitung."
+        ),
+    )
+    overdesign_factor: PositiveFloat = Field(
+        default=1.0,
+        description="Pengali beban gravitasi tiang (FixLoad). 1.0 = tanpa amplifikasi.",
+    )
+    base_elevation_m: float = Field(
+        default=0.0,
+        description="Elevasi dasar tiang (m), yaitu titik bawah segmen terbawah.",
+    )
+    poles: Annotated[list[PoleSegmentInput], Field(min_length=1)] = Field(
+        description="Segmen tiang, minimal satu. Urutan bebas; diurutkan menurut top_elevation_m."
+    )
+    direct_objects: list[DirectObjectInput] = Field(
+        default_factory=list,
+        description="Objek yang dipasang di tiang (lampu, rambu, dll.). Opsional.",
+    )
+    evaluated_positions_m: Annotated[list[float], Field(min_length=1)] = Field(
+        description=(
+            "Elevasi (m) tempat penampang dicek, minimal satu. Harus unik, tidak boleh "
+            "di bawah base_elevation_m, dan harus di bawah puncak tiang tertinggi."
+        )
+    )
 
     @model_validator(mode="after")
     def _check_consistency(self):

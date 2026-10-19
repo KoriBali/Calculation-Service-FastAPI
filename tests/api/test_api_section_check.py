@@ -60,8 +60,8 @@ def test_response_matches_python_calc(client, name, with_seismic):
     fixture = load_fixture(name)
     response = client.post(URL, json=to_request(fixture["input"], with_seismic))
 
-    assert response.status_code == 200, response.get_json()
-    body = response.get_json()
+    assert response.status_code == 200, response.json()
+    body = response.json()
     assert body["success"] is True
     data = body["data"]
     assert data["checks"] == (["wind", "seismic"] if with_seismic else ["wind"])
@@ -106,7 +106,7 @@ def all_keys(value) -> set[str]:
 @pytest.mark.parametrize("name", API_CASES)
 def test_response_keys_are_snake_case(client, name):
     response = client.post(URL, json=to_request(load_fixture(name)["input"]))
-    camel = {key for key in all_keys(response.get_json()) if key != key.lower()}
+    camel = {key for key in all_keys(response.json()) if key != key.lower()}
     assert not camel, f"camelCase keys in response: {sorted(camel)}"
 
 
@@ -115,7 +115,7 @@ def base_request() -> dict:
 
 
 def error_fields(response) -> set[str]:
-    return {item["field"] for item in response.get_json()["errors"]}
+    return {item["field"] for item in response.json()["errors"]}
 
 
 @pytest.mark.parametrize(
@@ -138,7 +138,7 @@ def test_schema_errors_return_422_with_field(client, change, field):
     change(request)
     response = client.post(URL, json=request)
     assert response.status_code == 422
-    assert response.get_json()["success"] is False
+    assert response.json()["success"] is False
     assert field in error_fields(response)
 
 
@@ -161,9 +161,24 @@ def test_engine_rule_error_returns_422_with_message(client):
     request = base_request() | {"evaluated_positions_m": [6.0]}  # top of the only pole
     response = client.post(URL, json=request)
     assert response.status_code == 422
-    assert "EvaluatedPosition must be below the top" in response.get_json()["message"]
+    assert "EvaluatedPosition must be below the top" in response.json()["message"]
 
 
-def test_non_json_body_returns_400(client):
-    response = client.post(URL, data="not json", content_type="text/plain")
+@pytest.mark.parametrize(
+    ("content", "content_type"),
+    [
+        ("not json", "text/plain"),
+        ("not json", "application/json"),
+        ("", "application/json"),
+        ("[]", "application/json"),
+        ('"text"', "application/json"),
+    ],
+    ids=["text-plain", "invalid-json", "empty", "json-list", "json-string"],
+)
+def test_non_json_object_body_returns_400(client, content, content_type):
+    response = client.post(URL, content=content, headers={"Content-Type": content_type})
     assert response.status_code == 400
+    assert response.json() == {
+        "success": False,
+        "message": "Request body harus berupa JSON object",
+    }

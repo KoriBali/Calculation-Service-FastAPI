@@ -4,7 +4,7 @@ import ast
 from pathlib import Path
 
 ENGINE_DIR = Path(__file__).resolve().parents[1] / "app" / "engine"
-FORBIDDEN_ROOTS = {"flask", "flask_cors", "pydantic", "werkzeug"}
+FORBIDDEN_ROOTS = {"fastapi", "starlette", "uvicorn", "pydantic", "flask"}
 ALLOWED_APP_PREFIX = "app.engine"
 
 

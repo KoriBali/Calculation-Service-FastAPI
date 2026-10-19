@@ -1,4 +1,4 @@
-"""Smoke test of the Flask shell after the legacy modules were removed."""
+"""Smoke test of the FastAPI shell after the legacy modules were removed."""
 
 import pytest
 
@@ -6,7 +6,7 @@ import pytest
 def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.get_json() == {"status": "healthy"}
+    assert response.json() == {"status": "healthy"}
 
 
 @pytest.mark.parametrize(

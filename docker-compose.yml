@@ -1,10 +1,10 @@
 services:
-  calculation-service:
+  calculation-service-fastapi:
     build: .
-    image: calculation-service:latest
-    container_name: calculation-service
+    image: calculation-service-fastapi:latest
+    container_name: calculation-service-fastapi
     ports:
-      - "5000:5000"
+      - "5001:5000"
     networks:
       - backend-network
 
