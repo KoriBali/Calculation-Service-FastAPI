@@ -1,0 +1,14 @@
+# Read by FastAPI Cloud, which does not support Pipfile.
+# Local development and Docker still use Pipfile: keep these pins in sync.
+[project]
+name = "calculation-service-fastapi"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]==0.146.0",
+    "pydantic==2.13.3",
+    "python-dotenv==1.2.2",
+]
+
+[tool.fastapi]
+entrypoint = "run:app"
