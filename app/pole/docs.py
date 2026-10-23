@@ -35,6 +35,9 @@ Envelope `{"success": true, "data": {...}}`. Isi `data`:
 - `design_condition`: kondisi angin/seismik yang dipakai engine.
   `wind.design_wind_speed_m_s` adalah kecepatan yang dipakai rumus
   (std 2-3 = 60, std 4 = 40, std 5 = 50, std 1/6 = `basic_wind_speed_m_s`).
+  `seismic` (`null` tanpa seismik) berisi `position`, `seismic_class`
+  (`null` untuk Ground), dan `k_value` yang dipakai rumus
+  (Rooftop: A = 1.5, B = 1.0, S = 2.0).
 - `evaluated_positions[]`: satu item per elevasi, berisi `pole`, `direct_object`
   (`null` kalau tidak ada objek), dan `section_check`.
 

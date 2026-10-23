@@ -58,4 +58,4 @@ def calculate_pole(request: PoleCalculationRequest) -> dict:
         # Engine rules beyond the schema, e.g. a position above every pole top.
         raise CalculationInputError(str(error)) from error
 
-    return map_pole_calculation(request, wind, seismic is not None, positions)
+    return map_pole_calculation(request, wind, seismic, positions)

@@ -2,6 +2,7 @@
 
 from dataclasses import asdict
 
+from app.engine.conditions.seismic import SeismicCondition
 from app.engine.conditions.wind import WindCondition
 
 
@@ -54,4 +55,15 @@ def map_wind_condition(wind: WindCondition) -> dict:
             "ds_air": common["Ds_air"],
             "adc_symbol": common["ADC_symbol"],
         },
+    }
+
+
+def map_seismic_condition(seismic: SeismicCondition | None) -> dict | None:
+    """The K value the engine used; for Rooftop it comes from seismic_class."""
+    if seismic is None:
+        return None
+    return {
+        "position": seismic.position,
+        "seismic_class": seismic.seismic_class,
+        "k_value": seismic.k_value,
     }

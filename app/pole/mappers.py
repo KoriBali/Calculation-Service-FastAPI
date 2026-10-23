@@ -1,9 +1,11 @@
+from app.engine.conditions.seismic import SeismicCondition
 from app.engine.conditions.wind import WindCondition
 from app.pole.schemas import PoleCalculationRequest
 from app.shared.mappers import (
     map_direct_object_aggregate,
     map_pole_aggregate,
     map_result,
+    map_seismic_condition,
     map_wind_condition,
 )
 
@@ -13,15 +15,15 @@ SCHEMA_VERSION = "1.0"
 def map_pole_calculation(
     request: PoleCalculationRequest,
     wind: WindCondition,
-    has_seismic: bool,
+    seismic: SeismicCondition | None,
     positions: list[tuple],
 ) -> dict:
     return {
         "schema_version": SCHEMA_VERSION,
-        "checks": ["wind", "seismic"] if has_seismic else ["wind"],
+        "checks": ["wind"] if seismic is None else ["wind", "seismic"],
         "design_condition": {
             "wind": map_wind_condition(wind),
-            "seismic": None if request.seismic is None else request.seismic.model_dump(),
+            "seismic": map_seismic_condition(seismic),
             "overdesign_factor": request.overdesign_factor,
             "base_elevation_m": request.base_elevation_m,
         },

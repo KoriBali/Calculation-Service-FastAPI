@@ -222,3 +222,31 @@ def test_response_carries_report_additions(client):
 def test_fixed_standard_reports_its_design_wind_speed(client):
     data = client.post(URL, json=base_request()).json()["data"]
     assert data["design_condition"]["wind"]["design_wind_speed_m_s"] == 60.0
+
+
+@pytest.mark.parametrize(
+    ("seismic", "expected"),
+    [
+        (None, None),
+        (
+            {"position": "Ground", "k_value": 0.5},
+            {"position": "Ground", "seismic_class": None, "k_value": 0.5},
+        ),
+        (
+            {"position": "Rooftop", "seismic_class": "A"},
+            {"position": "Rooftop", "seismic_class": "A", "k_value": 1.5},
+        ),
+        (
+            {"position": "Rooftop", "seismic_class": "S"},
+            {"position": "Rooftop", "seismic_class": "S", "k_value": 2.0},
+        ),
+    ],
+    ids=["none", "ground", "rooftop-a", "rooftop-s"],
+)
+def test_design_condition_reports_the_k_value_used(client, seismic, expected):
+    """Rooftop sends only the class; the gateway must not keep its own K table."""
+    request = to_request(load_fixture("case_pole_only_std2")["input"], with_seismic=False)
+    if seismic is not None:
+        request["seismic"] = seismic
+    data = client.post(URL, json=request).json()["data"]
+    assert data["design_condition"]["seismic"] == expected
