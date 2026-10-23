@@ -1,4 +1,4 @@
-"""POST /api/section-check/calculate: contract, validation, and parity."""
+"""POST /api/pole/calculate: contract, validation, and parity."""
 
 import copy
 
@@ -6,7 +6,7 @@ import pytest
 
 from tests.parity.parity import assert_matches, case_names, load_fixture
 
-URL = "/api/section-check/calculate"
+URL = "/api/pole/calculate"
 
 # Cases that the API can run before D6 (no overhead wire).
 API_CASES = [

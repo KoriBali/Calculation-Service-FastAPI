@@ -1,12 +1,12 @@
 from app.engine.conditions.wind import WindCondition
-from app.section_check.schemas import SectionCheckRequest
+from app.pole.schemas import PoleCalculationRequest
 from app.shared.mappers import map_result, map_wind_condition
 
 SCHEMA_VERSION = "1.0"
 
 
-def map_section_check(
-    request: SectionCheckRequest,
+def map_pole_calculation(
+    request: PoleCalculationRequest,
     wind: WindCondition,
     has_seismic: bool,
     positions: list[tuple],

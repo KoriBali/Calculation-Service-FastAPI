@@ -82,10 +82,10 @@ def create_app():
     # Register Routers
 
     # add the import here
-    from app.section_check.routes import section_check_router
+    from app.pole.routes import pole_router
 
     # add the router here
-    app.include_router(section_check_router)
+    app.include_router(pole_router)
 
 
     return app
