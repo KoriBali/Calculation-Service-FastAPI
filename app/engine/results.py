@@ -5,10 +5,15 @@ Ported from python_calc ``calculation/result.py``.
 DEVIATION: every seismic field is ``float | None``. None means no seismic
 condition was given, so nothing seismic was calculated. It is never
 replaced by 0.0, because 0.0 would read as "calculated and zero".
+
+ADDITION: read-only ``@property`` values for the report (weight and per-unit
+values). They are not in python_calc. ``asdict()`` skips properties, so the
+parity output of every dataclass is unchanged.
 """
 
 from dataclasses import dataclass
 
+from app.engine.loads.base import LoadObject
 from app.engine.loads.pole import PoleSectionProperties
 
 
@@ -49,6 +54,12 @@ class PoleCalculationResult:
     wind_moment_nm: float
     seismic_moment_nm: float | None
     directional_results: tuple["PoleDirectionalResult", ...] = ()
+
+    # ADDITION (not in python_calc): report column "unit weight W (N)".
+    @property
+    def weight_n(self) -> float:
+        """Gravity force of this segment before the OverdesignFactor."""
+        return LoadObject.force_from_mass(self.mass_kg)
 
 
 @dataclass(frozen=True)
@@ -126,6 +137,36 @@ class DirectObjectCalculationResult:
     seismic_load_n: float | None
     seismic_moment_nm: float | None
     directional_results: tuple[DirectObjectDirectionalResult, ...]
+
+    # ADDITION (not in python_calc): report columns for one unit.
+    @property
+    def weight_per_unit_n(self) -> float:
+        """Gravity force of one unit."""
+        return LoadObject.force_from_mass(self.mass_per_unit_kg)
+
+    @property
+    def per_unit_directional_results(
+        self,
+    ) -> tuple["DirectObjectPerUnitDirectionalResult", ...]:
+        """``directional_results`` divided back to one unit, same order."""
+        return tuple(
+            DirectObjectPerUnitDirectionalResult(
+                direction=item.direction,
+                projected_area_per_unit_m2=item.projected_area_m2 / self.quantity,
+                wind_load_per_unit_n=item.wind_load_n / self.quantity,
+            )
+            for item in self.directional_results
+        )
+
+
+# ADDITION (not in python_calc): built only by the property above.
+@dataclass(frozen=True)
+class DirectObjectPerUnitDirectionalResult:
+    """Wind values of one Direct Object unit for one direction."""
+
+    direction: str
+    projected_area_per_unit_m2: float
+    wind_load_per_unit_n: float
 
 
 @dataclass(frozen=True)
