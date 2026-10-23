@@ -33,8 +33,16 @@ di setiap elevasi dalam `evaluated_positions_m`.
 Envelope `{"success": true, "data": {...}}`. Isi `data`:
 - `schema_version`, `checks`: cek yang dihitung (`["wind"]` atau `["wind", "seismic"]`).
 - `design_condition`: kondisi angin/seismik yang dipakai engine.
+  `wind.design_wind_speed_m_s` adalah kecepatan yang dipakai rumus
+  (std 2-3 = 60, std 4 = 40, std 5 = 50, std 1/6 = `basic_wind_speed_m_s`).
 - `evaluated_positions[]`: satu item per elevasi, berisi `pole`, `direct_object`
   (`null` kalau tidak ada objek), dan `section_check`.
+
+Nilai untuk report (tidak ada di python_calc, dihitung engine):
+- `pole.pole_results[].weight_n`: berat segmen sebelum `overdesign_factor`.
+- `direct_object.direct_object_results[].weight_per_unit_n`: berat satu unit.
+- `direct_object.direct_object_results[].directional_results[].projected_area_per_unit_m2`
+  dan `wind_load_per_unit_n`: luas dan wind load satu unit pada arah tersebut.
 """
 
 REQUEST_EXAMPLES = {

@@ -44,7 +44,7 @@ calculation_service/
 │   │   ├── mappers.py         # hasil engine -> JSON
 │   │   ├── errors.py          # 400 body bukan JSON object, 422 input tidak valid
 │   │   └── response.py        # amplop {success, data, unique_code}
-│   └── <fitur>/               # contoh: section_check/
+│   └── <fitur>/               # contoh: pole/
 │       ├── routes.py          # APIRouter + endpoint, tanpa logika hitung
 │       ├── schemas.py         # request khusus fitur (memakai shared/schemas)
 │       ├── services.py        # schema -> adapter -> engine -> mapper
@@ -63,6 +63,7 @@ Aturan:
 - `app/engine/` hanya boleh meng-import stdlib dan `app.engine.*` (dijaga `tests/test_engine_boundary.py`).
 - Folder fitur tidak boleh meng-import folder fitur lain. Yang dipakai bersama dipindah ke `app/shared/`.
 - Rumus di engine adalah salinan python_calc. Perubahan rumus dilakukan di python_calc dulu, lalu fixture dibuat ulang dan engine diport ulang.
+- Selain salinan, engine hanya boleh memuat dua jenis tambahan, dan masing-masing ditandai komentar: `DEVIATION` (perilaku yang sengaja berbeda dari python_calc, saat ini hanya gempa opsional) dan `ADDITION` (nilai read-only untuk report yang tidak mengubah hasil apa pun, misalnya `weight_n`). Cari dengan `grep -rn "DEVIATION\|ADDITION" app/engine`.
 
 ## Instalasi & Persiapan
 
