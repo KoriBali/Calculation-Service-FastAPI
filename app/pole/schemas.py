@@ -8,7 +8,7 @@ from app.shared.schemas.direct_object import DirectObjectInput
 from app.shared.schemas.pole import PoleSegmentInput
 
 
-class SectionCheckRequest(ApiModel):
+class PoleCalculationRequest(ApiModel):
     """Every component except the pole is optional: sent = calculated.
 
     ``overhead_wires`` is not accepted yet (waits for decision D6).

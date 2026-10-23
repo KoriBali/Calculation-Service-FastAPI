@@ -2,6 +2,9 @@
 
 Ported from python_calc ``domain/conditions.py`` (commit 41cca03). Formulas,
 constants, and rounding are unchanged.
+
+ADDITION: ``WindCondition.design_wind_speed_m_s`` exposes the speed each
+standard uses. It is not in python_calc and no formula reads it.
 """
 
 from app.engine.conditions.directions import WIND_DIRECTIONS, WindDirection
@@ -95,6 +98,10 @@ def calc_kz(
 class WindCondition:
     """Wind condition implementing the confirmed rules for standards 1-6."""
 
+    # ADDITION (not in python_calc): the speeds hardcoded in wind_pressure_at()
+    # for standards 2-5. tests/engine/test_report_additions.py keeps them equal.
+    FIXED_WIND_SPEED_M_S = {2: 60.0, 3: 60.0, 4: 40.0, 5: 50.0}
+
     def __init__(
         self,
         design_standard: int,
@@ -136,6 +143,15 @@ class WindCondition:
     @property
     def directions(self) -> tuple[WindDirection, ...]:
         return WIND_DIRECTIONS
+
+    # ADDITION (not in python_calc): report item "design wind speed V".
+    @property
+    def design_wind_speed_m_s(self) -> float:
+        """Speed behind the wind pressure: fixed for 2-5, given for 1 and 6."""
+        return self.FIXED_WIND_SPEED_M_S.get(
+            self.design_standard,
+            self.basic_wind_speed_m_s,
+        )
 
     @property
     def common_parameters(self) -> dict | None:

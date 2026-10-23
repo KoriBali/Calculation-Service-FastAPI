@@ -3,8 +3,8 @@ from app.engine.calculators.pole import PoleCalculator
 from app.engine.calculators.section_check import EvaluatedPositionCalculator
 from app.engine.geometry.pole_assembly import PoleAssembly
 from app.engine.loads.base import OverdesignFactor
-from app.section_check.mappers import map_section_check
-from app.section_check.schemas import SectionCheckRequest
+from app.pole.mappers import map_pole_calculation
+from app.pole.schemas import PoleCalculationRequest
 from app.shared.adapters import (
     to_direct_object,
     to_pole_object,
@@ -14,7 +14,7 @@ from app.shared.adapters import (
 from app.shared.errors import CalculationInputError
 
 
-def calculate_section_check(request: SectionCheckRequest) -> dict:
+def calculate_pole(request: PoleCalculationRequest) -> dict:
     wind = to_wind_condition(request.wind)
     seismic = to_seismic_condition(request.seismic)
 
@@ -58,4 +58,4 @@ def calculate_section_check(request: SectionCheckRequest) -> dict:
         # Engine rules beyond the schema, e.g. a position above every pole top.
         raise CalculationInputError(str(error)) from error
 
-    return map_section_check(request, wind, seismic is not None, positions)
+    return map_pole_calculation(request, wind, seismic is not None, positions)

@@ -1,12 +1,17 @@
 from app.engine.conditions.wind import WindCondition
-from app.section_check.schemas import SectionCheckRequest
-from app.shared.mappers import map_result, map_wind_condition
+from app.pole.schemas import PoleCalculationRequest
+from app.shared.mappers import (
+    map_direct_object_aggregate,
+    map_pole_aggregate,
+    map_result,
+    map_wind_condition,
+)
 
 SCHEMA_VERSION = "1.0"
 
 
-def map_section_check(
-    request: SectionCheckRequest,
+def map_pole_calculation(
+    request: PoleCalculationRequest,
     wind: WindCondition,
     has_seismic: bool,
     positions: list[tuple],
@@ -23,8 +28,8 @@ def map_section_check(
         "evaluated_positions": [
             {
                 "evaluated_position_m": position,
-                "pole": map_result(pole),
-                "direct_object": map_result(direct_object),
+                "pole": map_pole_aggregate(pole),
+                "direct_object": map_direct_object_aggregate(direct_object),
                 "section_check": map_result(section),
             }
             for position, pole, direct_object, section in positions
