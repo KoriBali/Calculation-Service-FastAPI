@@ -11,7 +11,7 @@ def test_health(client):
 
 @pytest.mark.parametrize(
     "path",
-    ["/api/pole/calculate", "/api/load-object/calculate", "/api/opening-part/calculate"],
+    ["/api/section-check/calculate", "/api/load-object/calculate", "/api/opening-part/calculate"],
 )
 def test_legacy_endpoints_are_gone(client, path):
     assert client.post(path, json={}).status_code == 404

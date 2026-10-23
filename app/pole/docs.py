@@ -1,4 +1,4 @@
-"""OpenAPI (/docs) text and examples for POST /api/section-check/calculate.
+"""OpenAPI (/docs) text and examples for POST /api/pole/calculate.
 
 Request examples come from tests/parity/fixtures, so every one returns 200.
 """
