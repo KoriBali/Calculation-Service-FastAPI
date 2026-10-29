@@ -13,6 +13,7 @@ parity output of every dataclass is unchanged.
 
 from dataclasses import dataclass
 
+from app.engine import rounding
 from app.engine.loads.base import LoadObject
 from app.engine.loads.pole import PoleSectionProperties
 
@@ -59,7 +60,7 @@ class PoleCalculationResult:
     @property
     def weight_n(self) -> float:
         """Gravity force of this segment before the OverdesignFactor."""
-        return LoadObject.force_from_mass(self.mass_kg)
+        return rounding.SIG3(LoadObject.force_from_mass(self.mass_kg))
 
 
 @dataclass(frozen=True)
@@ -142,7 +143,7 @@ class DirectObjectCalculationResult:
     @property
     def weight_per_unit_n(self) -> float:
         """Gravity force of one unit."""
-        return LoadObject.force_from_mass(self.mass_per_unit_kg)
+        return rounding.SIG3(LoadObject.force_from_mass(self.mass_per_unit_kg))
 
     @property
     def per_unit_directional_results(
@@ -153,7 +154,7 @@ class DirectObjectCalculationResult:
             DirectObjectPerUnitDirectionalResult(
                 direction=item.direction,
                 projected_area_per_unit_m2=item.projected_area_m2 / self.quantity,
-                wind_load_per_unit_n=item.wind_load_n / self.quantity,
+                wind_load_per_unit_n=rounding.SIG3(item.wind_load_n / self.quantity),
             )
             for item in self.directional_results
         )

@@ -1,13 +1,14 @@
 """Wind condition for design standards 1-6.
 
-Ported from python_calc ``domain/conditions.py`` (commit 41cca03). Formulas,
-constants, and rounding are unchanged.
+Ported from python_calc ``domain/conditions.py`` (commit 41cca03). Formulas and constants are unchanged.
 
+DEVIATION: rounding follows VBA (see app/engine/rounding.py).
 ADDITION: ``WindCondition.design_wind_speed_m_s`` exposes the speed each
 standard uses. It is not in python_calc and no formula reads it.
 """
 
 from app.engine.conditions.directions import WIND_DIRECTIONS, WindDirection
+from app.engine import rounding
 
 
 def std_act_common(adc: int, hstr: float) -> dict[str, float | str]:
@@ -45,10 +46,10 @@ def std_act_common(adc: int, hstr: float) -> dict[str, float | str]:
             (-0.8 / 30) * (hstr - 10) + 3.1 if hstr < 40 else 2.3
         )
 
-    gf = round(gf, 3)
+    gf = rounding.COMMON_FACTOR(gf)
     er_reference_height = zb if hstr <= zb else hstr
-    er = round(1.7 * (er_reference_height / zg) ** alpha, 3)
-    air_density_factor = round(er**2 * gf, 3)
+    er = rounding.COMMON_FACTOR(1.7 * (er_reference_height / zg) ** alpha)
+    air_density_factor = rounding.COMMON_FACTOR(er**2 * gf)
 
     return {
         "Hstr": hstr,
@@ -92,7 +93,7 @@ def calc_kz(
         kz = (zb / hstr) ** (2 * alpha)
     else:
         kz = (z_height / hstr) ** (2 * alpha)
-    return round(kz, 3)
+    return rounding.KZ(kz)
 
 
 class WindCondition:
@@ -172,21 +173,21 @@ class WindCondition:
         """Return pole wind pressure in N/m2 according to the VBA rules."""
         standard = self.design_standard
         if standard == 1:
-            return round(
-                0.6 * self._common["Ds_air"] * self.basic_wind_speed_m_s**2,
-                3,
+            return rounding.PRESSURE_3(
+                0.6 * self._common["Ds_air"] * self.basic_wind_speed_m_s**2
             )
         if standard in (2, 3):
-            return round(0.5 * 1.23 * 60**2, 4)
+            return rounding.PRESSURE_4(0.5 * 1.23 * 60**2)
         if standard == 4:
-            return round(0.5 * 1.23 * 40**2, 3)
+            return rounding.PRESSURE_3(0.5 * 1.23 * 40**2)
         if standard == 5:
-            return round(0.5 * 1.23 * 50**2, 3)
+            return rounding.PRESSURE_3(0.5 * 1.23 * 50**2)
 
         kz = self.kz_at(top_elevation_m)
-        base_pressure = round(
-            0.6 * self._common["Ds_air"] * self.basic_wind_speed_m_s**2,
-            3,
+        base_pressure = rounding.PRESSURE_3(
+            0.6 * self._common["Ds_air"] * self.basic_wind_speed_m_s**2
         )
         pressure_with_kz = base_pressure * 1.42 * kz
-        return round(pressure_with_kz, 3) if pressure_with_kz > 2350 else 2350.0
+        if pressure_with_kz > 2350:
+            return rounding.PRESSURE_WITH_KZ(pressure_with_kz)
+        return 2350.0

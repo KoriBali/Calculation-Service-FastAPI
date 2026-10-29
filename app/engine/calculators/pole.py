@@ -3,11 +3,14 @@
 Ported from python_calc ``calculation/pole_calculator.py``.
 DEVIATION: ``seismic_condition`` may be None; every seismic result is
 then None.
+
+DEVIATION: rounding follows VBA (see app/engine/rounding.py).
 """
 
 from math import cos, pi, sin
 from math import fsum
 
+from app.engine import rounding
 from app.engine.geometry.pole_assembly import PoleAssembly
 from app.engine.results import (
     PoleAggregationResult,
@@ -80,28 +83,28 @@ class PoleCalculator:
             diameter_top,
             self.overdesign_factor,
         )
-        wind_load = pole.calculate_wind_load(
+        wind_load = rounding.SIG3(pole.calculate_wind_load(
             projected_area,
             cf,
             wind_pressure,
-        )
-        wind_moment = pole.calculate_moment(
+        ))
+        wind_moment = rounding.SIG3(pole.calculate_moment(
             wind_load,
             geometry.load_center_height_m,
-        )
+        ))
         # DEVIATION: no seismic condition -> no seismic load (None, not 0.0).
         if self.seismic_condition is None:
             seismic_load = None
             seismic_moment = None
         else:
-            seismic_load = pole.calculate_seismic_load(
+            seismic_load = rounding.SIG3(pole.calculate_seismic_load(
                 fix_load_n=fix_load,
                 k_value=self.seismic_condition.k_value,
-            )
-            seismic_moment = pole.calculate_moment(
+            ))
+            seismic_moment = rounding.SIG3(pole.calculate_moment(
                 seismic_load,
                 geometry.load_center_height_m,
-            )
+            ))
 
         directional_results = tuple(
             self._directional_result(
@@ -159,18 +162,18 @@ class PoleCalculator:
         return PoleAggregationResult(
             evaluated_position_m=float(evaluated_position_m),
             pole_results=pole_results,
-            total_fix_load_n=fsum(
+            total_fix_load_n=rounding.SIG3(fsum(
                 result.fix_load_n for result in pole_results
-            ),
+            )),
             total_seismic_load_n=(
                 None
                 if self.seismic_condition is None
-                else fsum(result.seismic_load_n for result in pole_results)
+                else rounding.SIG3(fsum(result.seismic_load_n for result in pole_results))
             ),
             total_seismic_moment_nm=(
                 None
                 if self.seismic_condition is None
-                else fsum(result.seismic_moment_nm for result in pole_results)
+                else rounding.SIG3(fsum(result.seismic_moment_nm for result in pole_results))
             ),
             directional_totals=directional_totals,
         )
@@ -190,21 +193,21 @@ class PoleCalculator:
         return PoleDirectionalTotal(
             direction=direction,
             angle_rad=angle_rad,
-            total_wind_load_n=fsum(
+            total_wind_load_n=rounding.SIG3(fsum(
                 result.wind_load_n for result in pole_results
-            ),
-            total_wind_load_x_n=fsum(
+            )),
+            total_wind_load_x_n=rounding.SIG3(fsum(
                 result.wind_load_x_n for result in matching_results
-            ),
-            total_wind_load_y_n=fsum(
+            )),
+            total_wind_load_y_n=rounding.SIG3(fsum(
                 result.wind_load_y_n for result in matching_results
-            ),
-            total_wind_moment_x_nm=fsum(
+            )),
+            total_wind_moment_x_nm=rounding.SIG3(fsum(
                 result.wind_moment_x_nm for result in matching_results
-            ),
-            total_wind_moment_y_nm=fsum(
+            )),
+            total_wind_moment_y_nm=rounding.SIG3(fsum(
                 result.wind_moment_y_nm for result in matching_results
-            ),
+            )),
         )
 
     @staticmethod
@@ -214,15 +217,15 @@ class PoleCalculator:
         direction: str,
         angle_rad: float,
     ) -> PoleDirectionalResult:
-        direction_cosine = round(cos(angle_rad + pi), 3)
-        direction_sine = round(sin(angle_rad), 3)
-        wind_x = wind_load_n * direction_cosine
-        wind_y = wind_load_n * direction_sine
+        direction_cosine = rounding.DIRECTION_FACTOR(cos(angle_rad + pi))
+        direction_sine = rounding.DIRECTION_FACTOR(sin(angle_rad))
+        wind_x = rounding.SIG3(wind_load_n * direction_cosine)
+        wind_y = rounding.SIG3(wind_load_n * direction_sine)
         return PoleDirectionalResult(
             direction=direction,
             angle_rad=angle_rad,
             wind_load_x_n=wind_x,
             wind_load_y_n=wind_y,
-            wind_moment_x_nm=load_center_height_m * wind_y,
-            wind_moment_y_nm=load_center_height_m * wind_x,
+            wind_moment_x_nm=rounding.SIG3(load_center_height_m * wind_y),
+            wind_moment_y_nm=rounding.SIG3(load_center_height_m * wind_x),
         )

@@ -8,10 +8,13 @@ totals, resultant, combined moment, and strength check are None.
 This is the OOP replacement for the applicable parts of ``Section_each.cls``.
 Arm-dependent eccentric FixLoad moments and torsion are deliberately deferred;
 they are not represented by artificial zero-valued strength checks here.
+
+DEVIATION: rounding follows VBA (see app/engine/rounding.py); status compares the rounded ratio, as Section_each.Calc_Safety_Mwl does.
 """
 
 from math import fsum, hypot
 
+from app.engine import rounding
 from app.engine.calculators.direct_object import DirectObjectCalculator
 from app.engine.calculators.overhead_wire import OverheadWireCalculator
 from app.engine.calculators.pole import PoleCalculator
@@ -96,23 +99,23 @@ class EvaluatedPositionCalculator:
         section_properties = evaluated_pole_result.section_properties
         allowable_stress = evaluated_pole.material.short_term_allowable_bending
 
-        total_fix_load = fsum((
+        total_fix_load = rounding.SIG3(fsum((
             pole.total_fix_load_n,
             0.0 if direct is None else direct.total_fix_load_n,
             0.0 if wire is None else wire.total_fix_load_n,
-        ))
+        )))
         # DEVIATION: without seismic, every seismic total stays None.
         if self.has_seismic:
-            total_seismic_load = fsum((
+            total_seismic_load = rounding.SIG3(fsum((
                 pole.total_seismic_load_n,
                 0.0 if direct is None else direct.total_seismic_load_n,
                 0.0 if wire is None else wire.total_seismic_load_n,
-            ))
-            total_seismic_moment = fsum((
+            )))
+            total_seismic_moment = rounding.SIG3(fsum((
                 pole.total_seismic_moment_nm,
                 0.0 if direct is None else direct.total_seismic_moment_nm,
                 0.0 if wire is None else wire.total_seismic_moment_nm,
-            ))
+            )))
             total_seismic_tension = (
                 0.0 if wire is None else wire.total_seismic_tension_n
             )
@@ -185,45 +188,47 @@ class EvaluatedPositionCalculator:
         section_modulus_cm3,
         allowable_stress_n_mm2,
     ) -> EvaluatedPositionDirectionalResult:
-        wind_load = fsum((
+        wind_load = rounding.SIG3(fsum((
             pole.total_wind_load_n,
             0.0 if direct is None else direct.total_wind_load_n,
             0.0 if wire is None else wire.total_wind_load_n,
-        ))
-        wind_x = fsum((
+        )))
+        wind_x = rounding.SIG3(fsum((
             pole.total_wind_load_x_n,
             0.0 if direct is None else direct.total_wind_load_x_n,
             0.0 if wire is None else wire.total_wind_load_x_n,
-        ))
-        wind_y = fsum((
+        )))
+        wind_y = rounding.SIG3(fsum((
             pole.total_wind_load_y_n,
             0.0 if direct is None else direct.total_wind_load_y_n,
             0.0 if wire is None else wire.total_wind_load_y_n,
-        ))
+        )))
         tension_x = 0.0 if wire is None else wire.total_wind_tension_x_n
         tension_y = 0.0 if wire is None else wire.total_wind_tension_y_n
-        resultant_x = wind_x + tension_x
-        resultant_y = wind_y + tension_y
+        resultant_x = rounding.SIG3(wind_x + tension_x)
+        resultant_y = rounding.SIG3(wind_y + tension_y)
 
-        wind_moment_x = fsum((
+        wind_moment_x = rounding.SIG3(fsum((
             pole.total_wind_moment_x_nm,
             0.0 if direct is None else direct.total_wind_moment_x_nm,
             0.0 if wire is None else wire.total_wind_moment_x_nm,
-        ))
-        wind_moment_y = fsum((
+        )))
+        wind_moment_y = rounding.SIG3(fsum((
             pole.total_wind_moment_y_nm,
             0.0 if direct is None else direct.total_wind_moment_y_nm,
             0.0 if wire is None else wire.total_wind_moment_y_nm,
-        ))
+        )))
         tension_moment_x = (
             0.0 if wire is None else wire.total_wind_tension_moment_x_nm
         )
         tension_moment_y = (
             0.0 if wire is None else wire.total_wind_tension_moment_y_nm
         )
-        combined_moment_x = wind_moment_x + tension_moment_x
-        combined_moment_y = wind_moment_y + tension_moment_y
-        combined_wind_moment = hypot(combined_moment_x, combined_moment_y)
+        combined_moment_x = rounding.SIG3(wind_moment_x + tension_moment_x)
+        combined_moment_y = rounding.SIG3(wind_moment_y + tension_moment_y)
+        combined_wind_moment = rounding.SIG3(
+            hypot(combined_moment_x, combined_moment_y)
+        )
 
         # DEVIATION: no seismic totals -> no seismic resultant or check.
         if total_seismic_load_n is None:
@@ -237,8 +242,10 @@ class EvaluatedPositionCalculator:
                 else abs(wire.total_seismic_tension_moment_nm)
             )
             seismic_tension_load = abs(total_seismic_tension_n)
-            resultant_seismic_load = total_seismic_load_n + seismic_tension_load
-            combined_seismic_moment = (
+            resultant_seismic_load = rounding.SIG3(
+                total_seismic_load_n + seismic_tension_load
+            )
+            combined_seismic_moment = rounding.SIG3(
                 total_seismic_moment_nm + seismic_tension_moment
             )
             seismic_strength = cls._strength_result(
@@ -256,7 +263,7 @@ class EvaluatedPositionCalculator:
             total_wind_tension_n=0.0 if wire is None else wire.total_wind_tension_n,
             resultant_wind_load_x_n=resultant_x,
             resultant_wind_load_y_n=resultant_y,
-            resultant_wind_load_n=hypot(resultant_x, resultant_y),
+            resultant_wind_load_n=rounding.SIG3(hypot(resultant_x, resultant_y)),
             total_wind_moment_x_nm=wind_moment_x,
             total_wind_moment_y_nm=wind_moment_y,
             total_wind_tension_moment_x_nm=tension_moment_x,
@@ -287,8 +294,9 @@ class EvaluatedPositionCalculator:
 
         # Nm / cm3 is numerically equal to N/mm2 after both x1000
         # conversions used by Section_each.cls.
-        stress = bending_moment_nm / section_modulus_cm3
-        utilization = stress / allowable_stress_n_mm2
+        stress = rounding.SIG3(bending_moment_nm / section_modulus_cm3)
+        utilization = rounding.SIG3(stress / allowable_stress_n_mm2)
+
         return BendingStrengthResult(
             bending_moment_nm=bending_moment_nm,
             section_modulus_cm3=section_modulus_cm3,

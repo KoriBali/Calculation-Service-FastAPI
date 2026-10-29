@@ -3,6 +3,7 @@
 Units: diameter and thickness in mm, length in m, results in cm², cm³, cm⁴,
 cm, and kg.
 """
+from app.engine import rounding
 
 PI = 3.14159265358979  # same literal as VBA, not math.pi
 DENSITY = 7850  # kg/m³, steel
@@ -10,39 +11,35 @@ DENSITY = 7850  # kg/m³, steel
 
 def cross_section_area_cm2(diameter_mm: float, thickness_mm: float) -> float:
     """BasicFunction.Cross_AreaP."""
-    return round(
+    return rounding.SECTION_PROPERTY(
         PI / 4 * (diameter_mm**2 - (diameter_mm - 2 * thickness_mm) ** 2) / 100,
-        2,
     )
 
 
 def moment_of_inertia_cm4(diameter_mm: float, thickness_mm: float) -> float:
     """BasicFunction.Moment_Inertia."""
-    return round(
+    return rounding.SECTION_PROPERTY(
         (PI / 64)
         * ((diameter_mm**4) - (diameter_mm - 2 * thickness_mm) ** 4)
         / 10000,
-        2,
     )
 
 
 def section_modulus_cm3(diameter_mm: float, thickness_mm: float) -> float:
     """BasicFunction.Section_Modulus."""
-    return round(
+    return rounding.SECTION_PROPERTY(
         PI
         * (diameter_mm**4 - (diameter_mm - thickness_mm * 2) ** 4)
         / (32 * diameter_mm)
         / 1000,
-        2,
     )
 
 
 def radius_of_gyration_cm(diameter_mm: float, thickness_mm: float) -> float:
     """BasicFunction.Radius_Gyration."""
-    return round(
+    return rounding.SECTION_PROPERTY(
         ((1 / 16) * (diameter_mm**2 + (diameter_mm - 2 * thickness_mm) ** 2) / 100)
         ** 0.5,
-        2,
     )
 
 
@@ -59,7 +56,7 @@ def straight_pole_mass_kg(
         * DENSITY
         * length_m
     )
-    return round(mass, 2)
+    return rounding.POLE_MASS(mass)
 
 
 def taper_pole_mass_kg(
@@ -87,4 +84,4 @@ def taper_pole_mass_kg(
         / 10**6
         * DENSITY
     )
-    return round(mass, 2)
+    return rounding.POLE_MASS(mass)

@@ -1,4 +1,4 @@
-"""Engine results -> JSON-ready dicts. Full precision, no rounding."""
+"""Engine results -> JSON-ready dicts. Values are already rounded by the engine (VBA rules)."""
 
 from dataclasses import asdict
 
