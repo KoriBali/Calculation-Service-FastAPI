@@ -4,6 +4,7 @@ import copy
 
 import pytest
 
+from app.engine.rounding import python_calc_rounding
 from tests.parity.parity import assert_matches, case_names, load_fixture
 
 URL = "/api/pole/calculate"
@@ -74,8 +75,10 @@ def to_request(case_input: dict, with_seismic: bool = True) -> dict:
 @pytest.mark.parametrize("with_seismic", [True, False], ids=["seismic", "no-seismic"])
 @pytest.mark.parametrize("name", API_CASES)
 def test_response_matches_python_calc(client, name, with_seismic):
+    """Mapping and shape check: the fixtures hold python_calc rounding."""
     fixture = load_fixture(name)
-    response = client.post(URL, json=to_request(fixture["input"], with_seismic))
+    with python_calc_rounding():
+        response = client.post(URL, json=to_request(fixture["input"], with_seismic))
 
     assert response.status_code == 200, response.json()
     body = response.json()
@@ -94,7 +97,41 @@ def test_response_matches_python_calc(client, name, with_seismic):
                 expected[key],
                 f"{label}.{key}",
                 seismic_absent=not with_seismic,
-            )
+    )            
+            
+VBA_CASE = {
+    "wind": {"design_standard": 3, "structure_height_m": 8.0},
+    "seismic": {"position": "Ground", "k_value": 0.3},
+    "poles": [{
+        "name": "P1", "pole_type": "Straight", "diameter_mm": 139.8,
+        "thickness_mm": 4.5, "material": "STK400", "top_elevation_m": 8.0,
+    }],
+    "direct_objects": [{
+        "name": "LAMP", "object_type": "Omni", "front_area_m2": 0.123,
+        "mass_per_unit_kg": 12.5, "elevation_m": 7.5,
+        "base_wind_coefficient": 1.2, "quantity": 2,
+    }],
+    "evaluated_positions_m": [0.0],
+}
+
+
+def test_response_carries_vba_rounded_values(client):
+    """Same case as tests/engine/test_vba_rounding.py, read through the API."""
+    response = client.post(URL, json=VBA_CASE)
+
+    assert response.status_code == 200, response.json()
+    position = response.json()["data"]["evaluated_positions"][0]
+    pole = position["pole"]["pole_results"][0]
+    lamp = position["direct_object"]["direct_object_results"][0]
+    north = position["section_check"]["directional_results"][0]
+
+    assert pole["wind_load_n"] == 1740.0
+    assert pole["weight_n"] == 1180.0
+    assert lamp["weight_per_unit_n"] == 123.0
+    assert lamp["directional_results"][0]["wind_load_per_unit_n"] == 327.0
+    assert north["combined_wind_moment_nm"] == 11900.0
+    assert north["wind_strength"]["utilization_ratio"] == 0.809
+    assert north["wind_strength"]["status"] == "O.K"
 
 
 def test_camel_case_body_is_rejected(client):
