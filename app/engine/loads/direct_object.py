@@ -1,11 +1,13 @@
 """Domain model for equipment mounted directly on a pole.
 
 Ported from python_calc ``domain/direct_object.py``.
+DEVIATION: rounding follows VBA (see app/engine/rounding.py); wind load and FixLoad are built in the VBA order so the rounding points exist.
 """
 
 from enum import Enum
 from math import cos, pi, sin
 
+from app.engine import rounding
 from app.engine.loads.base import LoadObject
 
 
@@ -68,11 +70,16 @@ class DirectObject(LoadObject):
 
     def total_mass_kg(self) -> float:
         """Return total mass for all units of this Direct Object."""
-        return self.mass_per_unit_kg * self.quantity
+        return rounding.SIG3(self.mass_per_unit_kg * self.quantity)
+
+    def weight_per_unit_n(self) -> float:
+        """Return the gravity force of one unit (DO_each ``fl_n``)."""
+        return rounding.SIG3(self.force_from_mass(self.mass_per_unit_kg))
 
     def fix_load_n(self) -> float:
-        """Return FixLoad without a Pole OverdesignFactor."""
-        return self.force_from_mass(self.total_mass_kg())
+        """Return FixLoad without a Pole OverdesignFactor (``fld_n``)."""
+        return rounding.SIG3(self.weight_per_unit_n() * self.quantity)
+
 
     def load_center_height_m(self, evaluated_position_m: float) -> float:
         """Return the load-center height above an EvaluatedPosition."""
@@ -88,7 +95,10 @@ class DirectObject(LoadObject):
     def direction_factors(self, wind_angle_rad: float) -> tuple[float, float]:
         """Return VBA-compatible rounded sine and cosine factors."""
         angle = self.angle_of_attack_rad(wind_angle_rad)
-        return round(sin(angle), 3), round(cos(angle), 3)
+        return (
+            rounding.DIRECTION_FACTOR(sin(angle)),
+            rounding.DIRECTION_FACTOR(cos(angle)),
+        )
 
     def projected_area(self, wind_angle_rad: float) -> float:
         """Return total effective wind area for one wind direction."""
@@ -101,6 +111,26 @@ class DirectObject(LoadObject):
                 + self.side_area_m2 * abs(cosine)
             )
         return area_per_unit * self.quantity
+    
+    def wind_load_n(
+        self,
+        wind_angle_rad: float,
+        cf: float,
+        wind_pressure_n_m2: float,
+    ) -> float:
+        """Return total wind load in the order of ``DO_each.Calc_wld``."""
+        front_load = rounding.SIG3(
+            self.calculate_wind_load(self.front_area_m2, cf, wind_pressure_n_m2)
+            * self.quantity
+        )
+        if self.is_omni:
+            return front_load
+        side_load = rounding.SIG3(
+            self.calculate_wind_load(self.side_area_m2, cf, wind_pressure_n_m2)
+            * self.quantity
+        )
+        sine, cosine = self.direction_factors(wind_angle_rad)
+        return rounding.SIG3(front_load * abs(sine) + side_load * abs(cosine))
 
     def wind_coefficient(
         self,
@@ -115,5 +145,4 @@ class DirectObject(LoadObject):
             if design_standard == 1
             else self.base_wind_coefficient
         )
-        return round(coefficient, 3)
-
+        return rounding.CF(coefficient)

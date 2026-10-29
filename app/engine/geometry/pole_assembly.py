@@ -1,10 +1,12 @@
 """Geometry and ordering of assembled pole segments.
 
 Ported from python_calc ``calculation/pole_assembly.py``.
+DEVIATION: rounding follows VBA (see app/engine/rounding.py).
 """
 
 from collections.abc import Iterable
 
+from app.engine import rounding
 from app.engine.results import PoleActiveGeometry
 from app.engine.loads.pole import PoleObject
 
@@ -87,6 +89,10 @@ class PoleAssembly:
                 bottom_distance_from_top,
                 full_length,
             )
+            
+            if pole.is_tapered:
+                diameter_bottom = rounding.TAPER_DIAMETER(diameter_bottom)
+                
             diameter_top = pole.diameter_at(
                 top_distance_from_top,
                 full_length,
@@ -96,7 +102,7 @@ class PoleAssembly:
                 diameter_bottom,
                 diameter_top,
             )
-            load_center_height = (
+            load_center_height = rounding.SIG3(
                 active_bottom - evaluated_position_m + local_center
             )
 

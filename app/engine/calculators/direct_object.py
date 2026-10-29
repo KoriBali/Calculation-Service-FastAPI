@@ -1,13 +1,14 @@
 """Load calculation and aggregation for Direct Objects.
 
 Ported from python_calc ``calculation/direct_object_calculator.py``.
-DEVIATION: ``seismic_condition`` may be None; every seismic result is
-then None.
+DEVIATION: seismic_condition may be None; every seismic result is then None.
+DEVIATION: rounding follows VBA (see app/engine/rounding.py).
 """
 
 from collections.abc import Iterable
 from math import cos, fsum, pi, sin
 
+from app.engine import rounding
 from app.engine.conditions.seismic import SeismicCondition
 from app.engine.conditions.wind import WindCondition
 from app.engine.loads.direct_object import DirectObject
@@ -79,14 +80,14 @@ class DirectObjectCalculator:
             seismic_load = None
             seismic_moment = None
         else:
-            seismic_load = direct_object.calculate_seismic_load(
+            seismic_load = rounding.SIG3(direct_object.calculate_seismic_load(
                 fix_load_n=fix_load,
                 k_value=self.seismic_condition.k_value,
-            )
-            seismic_moment = direct_object.calculate_moment(
+            ))
+            seismic_moment = rounding.SIG3(direct_object.calculate_moment(
                 seismic_load,
                 load_center_height,
-            )
+            ))
         directional_results = tuple(
             self._directional_result(
                 direct_object=direct_object,
@@ -144,16 +145,16 @@ class DirectObjectCalculator:
             evaluated_position_m=float(evaluated_position_m),
             direct_object_results=results,
             active_object_count=len(results),
-            total_fix_load_n=fsum(result.fix_load_n for result in results),
+            total_fix_load_n=rounding.SIG3(fsum(result.fix_load_n for result in results)),
             total_seismic_load_n=(
                 None
                 if self.seismic_condition is None
-                else fsum(result.seismic_load_n for result in results)
+                else rounding.SIG3(fsum(result.seismic_load_n for result in results))
             ),
             total_seismic_moment_nm=(
                 None
                 if self.seismic_condition is None
-                else fsum(result.seismic_moment_nm for result in results)
+                else rounding.SIG3(fsum(result.seismic_moment_nm for result in results))
             ),
             directional_totals=directional_totals,
         )
@@ -170,13 +171,18 @@ class DirectObjectCalculator:
         angle_of_attack = direct_object.angle_of_attack_rad(wind_angle_rad)
         sine, cosine = direct_object.direction_factors(wind_angle_rad)
         projected_area = direct_object.projected_area(wind_angle_rad)
-        wind_load = direct_object.calculate_wind_load(
-            projected_area,
+        wind_load = direct_object.wind_load_n(
+            wind_angle_rad,
             cf,
             wind_pressure_n_m2,
         )
-        wind_x = wind_load * round(cos(wind_angle_rad + pi), 3)
-        wind_y = wind_load * round(sin(wind_angle_rad), 3)
+        wind_x = rounding.SIG3(
+            wind_load * rounding.DIRECTION_FACTOR(cos(wind_angle_rad + pi))
+        )
+        wind_y = rounding.SIG3(
+            wind_load * rounding.DIRECTION_FACTOR(sin(wind_angle_rad))
+        )
+
         return DirectObjectDirectionalResult(
             direction=direction,
             angle_rad=wind_angle_rad,
@@ -187,9 +193,9 @@ class DirectObjectCalculator:
             wind_load_n=wind_load,
             wind_load_x_n=wind_x,
             wind_load_y_n=wind_y,
-            wind_moment_nm=wind_load * load_center_height_m,
-            wind_moment_x_nm=wind_y * load_center_height_m,
-            wind_moment_y_nm=wind_x * load_center_height_m,
+            wind_moment_nm=rounding.SIG3(load_center_height_m * wind_load),
+            wind_moment_x_nm=rounding.SIG3(load_center_height_m * wind_y),
+            wind_moment_y_nm=rounding.SIG3(load_center_height_m * wind_x),
         )
 
     @staticmethod
@@ -207,22 +213,22 @@ class DirectObjectCalculator:
         return DirectObjectDirectionalTotal(
             direction=direction,
             angle_rad=angle_rad,
-            total_wind_load_n=fsum(
+            total_wind_load_n=rounding.SIG3(fsum(
                 result.wind_load_n for result in direction_results
-            ),
-            total_wind_load_x_n=fsum(
+            )),
+            total_wind_load_x_n=rounding.SIG3(fsum(
                 result.wind_load_x_n for result in direction_results
-            ),
-            total_wind_load_y_n=fsum(
+            )),
+            total_wind_load_y_n=rounding.SIG3(fsum(
                 result.wind_load_y_n for result in direction_results
-            ),
-            total_wind_moment_nm=fsum(
+            )),
+            total_wind_moment_nm=rounding.SIG3(fsum(
                 result.wind_moment_nm for result in direction_results
-            ),
-            total_wind_moment_x_nm=fsum(
+            )),
+            total_wind_moment_x_nm=rounding.SIG3(fsum(
                 result.wind_moment_x_nm for result in direction_results
-            ),
-            total_wind_moment_y_nm=fsum(
+            )),
+            total_wind_moment_y_nm=rounding.SIG3(fsum(
                 result.wind_moment_y_nm for result in direction_results
-            ),
+            )),
         )

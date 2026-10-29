@@ -11,6 +11,7 @@ from app.engine.geometry.pole_assembly import PoleAssembly
 from app.engine.loads.base import LoadObject, OverdesignFactor
 from app.engine.loads.direct_object import DirectObject
 from app.engine.loads.pole import PoleObject
+from app.engine.rounding import significant_figures
 
 WIND = WindCondition(3, 8.0)
 QUANTITY = 3
@@ -31,14 +32,19 @@ def sign_result():
 def test_pole_weight_is_before_overdesign_factor():
     result = pole_result()
 
-    assert result.weight_n == pytest.approx(result.mass_kg * LoadObject.GRAVITY, abs=1e-9)
-    assert result.fix_load_n == pytest.approx(result.weight_n * 1.2, abs=1e-9)
+    assert result.weight_n == significant_figures(result.mass_kg * LoadObject.GRAVITY, 3)
+    assert result.fix_load_n == significant_figures(result.weight_n * 1.2, 3)
 
 
-def test_direct_object_per_unit_values_times_quantity_give_totals():
+def test_direct_object_per_unit_values_match_totals():
+    """FixLoad is built from the rounded unit weight (DO_each ``fld_n``).
+
+    Wind per unit is the rounded total divided back, so ``x QUANTITY`` only
+    matches the total to 3 significant figures.
+    """
     result = sign_result()
 
-    assert result.weight_per_unit_n * QUANTITY == pytest.approx(result.fix_load_n, abs=1e-9)
+    assert result.fix_load_n == significant_figures(result.weight_per_unit_n * QUANTITY, 3)
     for unit, total in zip(
         result.per_unit_directional_results, result.directional_results, strict=True
     ):
@@ -46,8 +52,8 @@ def test_direct_object_per_unit_values_times_quantity_give_totals():
         assert unit.projected_area_per_unit_m2 * QUANTITY == pytest.approx(
             total.projected_area_m2, abs=1e-9
         )
-        assert unit.wind_load_per_unit_n * QUANTITY == pytest.approx(
-            total.wind_load_n, abs=1e-9
+        assert unit.wind_load_per_unit_n == significant_figures(
+            total.wind_load_n / QUANTITY, 3
         )
 
 
@@ -65,7 +71,7 @@ def test_fixed_design_wind_speed_matches_wind_pressure(standard):
     condition = WindCondition(standard, 8.0)
     digits = 4 if standard in (2, 3) else 3
 
-    assert condition.wind_pressure_at(8.0) == round(
+    assert condition.wind_pressure_at(8.0) == significant_figures(
         0.5 * 1.23 * condition.design_wind_speed_m_s**2, digits
     )
 

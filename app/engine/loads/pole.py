@@ -1,12 +1,13 @@
 """Domain model for one straight or tapered pole segment.
 
 Ported from python_calc ``domain/pole.py``.
+DEVIATION: rounding follows VBA (see app/engine/rounding.py).
 """
 
 from dataclasses import dataclass
 from enum import Enum
 
-from app.engine import sections
+from app.engine import rounding, sections
 
 from app.engine.loads.base import LoadObject, OverdesignFactor
 from app.engine.materials import PoleMaterial, get_pole_material
@@ -159,7 +160,7 @@ class PoleObject(LoadObject):
                 thickness,
             ),
             moment_of_inertia_cm4=moment_of_inertia,
-            second_moment_pair_cm4=round(moment_of_inertia * 2, 3),
+            second_moment_pair_cm4=rounding.SECOND_MOMENT_PAIR(moment_of_inertia * 2),
             radius_of_gyration_cm=sections.radius_of_gyration_cm(
                 diameter_at_position_mm,
                 thickness,
@@ -214,7 +215,8 @@ class PoleObject(LoadObject):
             diameter_at_active_top_mm=diameter_at_active_top_mm,
         )
         factor = overdesign_factor or OverdesignFactor()
-        return factor.apply(self.force_from_mass(mass))
+        weight = rounding.SIG3(self.force_from_mass(mass))
+        return rounding.SIG3(factor.apply(weight))
 
     @staticmethod
     def slenderness_ratio(active_length_m: float, diameter_mm: float) -> float:
@@ -227,6 +229,18 @@ class PoleObject(LoadObject):
 
     @classmethod
     def base_wind_coefficient(
+        cls,
+        active_length_m: float,
+        diameter_mm: float,
+        design_standard: int,
+    ) -> float:
+        """Return nnC as reported (rounded)."""
+        return rounding.NNC(
+            cls._unrounded_wind_coefficient(active_length_m, diameter_mm, design_standard)
+        )
+
+    @classmethod
+    def _unrounded_wind_coefficient(
         cls,
         active_length_m: float,
         diameter_mm: float,
@@ -249,7 +263,7 @@ class PoleObject(LoadObject):
             nnc = (0.2 / 7) * hpb + 0.67144
         else:
             nnc = 0.9
-        return round(nnc, 3)
+        return nnc
 
     def wind_coefficient(
         self,
@@ -264,13 +278,13 @@ class PoleObject(LoadObject):
         cuts through this pole. For a whole segment above that position, the
         diameter at the physical bottom of the segment is used.
         """
-        nnc = self.base_wind_coefficient(
+        nnc = rounding.NNC_INTO_CF(self._unrounded_wind_coefficient(
             active_length_m=active_length_m,
             diameter_mm=diameter_at_active_bottom_mm,
             design_standard=design_standard,
-        )
+        ))
         cf = nnc * kz if design_standard == 1 else nnc
-        return round(cf, 3)
+        return rounding.CF(cf)
 
     def projected_area(
         self,
@@ -287,7 +301,7 @@ class PoleObject(LoadObject):
         average_diameter_m = (
             (diameter_at_bottom_mm + diameter_at_top_mm) / 2
         ) / 1000
-        return average_diameter_m * active_length_m
+        return rounding.SIG3(average_diameter_m * active_length_m)
 
     def local_load_center(
         self,
@@ -301,12 +315,12 @@ class PoleObject(LoadObject):
         if active_length_m == 0:
             return 0.0
         if not self.is_tapered:
-            return active_length_m / 2
+            return rounding.SIG3(active_length_m / 2)
 
         diameter_sum = diameter_at_bottom_mm + diameter_at_top_mm
         if diameter_sum <= 0:
             raise ValueError("Sum of active pole diameters must be positive")
-        return (
+        return rounding.SIG3(
             active_length_m
             / 3
             * (2 * diameter_at_top_mm + diameter_at_bottom_mm)
