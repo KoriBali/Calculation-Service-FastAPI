@@ -1,14 +1,14 @@
 """Tests for Direct Object behaviour and aggregation.
 
-Ported from python_calc ``tests/test_direct_object.py``.
+Ported from python_calc ``tests/test_direct_object.py`` (commit 270d23b).
 """
 
 import unittest
 
-from app.engine.calculators.direct_object import DirectObjectCalculator
-from app.engine.conditions.seismic import SeismicCondition
-from app.engine.conditions.wind import WindCondition
-from app.engine.loads.direct_object import DirectObject
+from app.engine.calculation.direct_object_calculator import DirectObjectCalculator
+from app.engine.calculation.rounding import CalculationValueType
+from app.engine.domain.conditions import SeismicCondition, WindCondition
+from app.engine.domain.direct_object import DirectObject
 
 
 def directional_object(name="Panel", elevation=10, quantity=2):
@@ -98,10 +98,19 @@ class DirectObjectCalculatorTests(unittest.TestCase):
     def test_seismic_load_and_moment_follow_confirmed_rule(self):
         result = self.calculator.calculate_one(self.upper, 4)
 
-        self.assertEqual(result.seismic_load_n, result.fix_load_n * 0.5)
+        self.assertEqual(
+            result.seismic_load_n,
+            self.calculator.rounding.apply(
+                result.fix_load_n * 0.5,
+                CalculationValueType.LOAD,
+            ),
+        )
         self.assertEqual(
             result.seismic_moment_nm,
-            result.seismic_load_n * 6,
+            self.calculator.rounding.apply(
+                result.seismic_load_n * 6,
+                CalculationValueType.MOMENT,
+            ),
         )
 
     def test_directional_components_and_moments_follow_vba(self):
@@ -115,7 +124,10 @@ class DirectObjectCalculatorTests(unittest.TestCase):
         self.assertGreater(by_direction["N"].wind_load_y_n, 0)
         self.assertEqual(
             by_direction["N"].wind_moment_x_nm,
-            by_direction["N"].wind_load_y_n * 6,
+            self.calculator.rounding.apply(
+                by_direction["N"].wind_load_y_n * 6,
+                CalculationValueType.MOMENT,
+            ),
         )
 
     def test_aggregation_sums_active_objects_per_direction(self):

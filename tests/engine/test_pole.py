@@ -1,14 +1,14 @@
 """Tests for individual pole behaviour.
 
-Ported from python_calc ``tests/test_pole.py``.
+Ported from python_calc ``tests/test_pole.py`` (commit 270d23b).
 """
 
 import unittest
 
-from app.engine import sections
+from app.engine import basic_function as BasicFunction
 
-from app.engine.loads.base import OverdesignFactor
-from app.engine.loads.pole import PoleObject
+from app.engine.domain.loads import OverdesignFactor
+from app.engine.domain.pole import PoleObject
 
 
 def straight_pole(name="P1", top=10.0, diameter=200.0):
@@ -74,7 +74,7 @@ class PoleObjectTests(unittest.TestCase):
 
         self.assertEqual(
             mass,
-            sections.straight_pole_mass_kg(200, 5, 5),
+            BasicFunction.Pole_WeightKg_Straight(200, 5, 5),
         )
 
     def test_tapered_mass_uses_lower_and_upper_thickness(self):
@@ -93,12 +93,12 @@ class PoleObjectTests(unittest.TestCase):
 
         self.assertEqual(
             mass,
-            sections.taper_pole_mass_kg(200, 300, 4, 6, 10),
+            BasicFunction.Pole_WeightKg_Taper(200, 300, 4, 6, 10),
         )
 
     def test_fix_load_uses_mass_after_two_decimal_rounding(self):
         pole = straight_pole()
-        mass = sections.straight_pole_mass_kg(200, 5, 5)
+        mass = BasicFunction.Pole_WeightKg_Straight(200, 5, 5)
 
         fix_load = pole.fix_load_n(5, 200, 200)
 
@@ -138,15 +138,15 @@ class PoleObjectTests(unittest.TestCase):
 
         self.assertEqual(
             properties.cross_section_area_cm2,
-            sections.cross_section_area_cm2(200, 5),
+            BasicFunction.Cross_AreaP(200, 5),
         )
         self.assertEqual(
             properties.section_modulus_cm3,
-            sections.section_modulus_cm3(200, 5),
+            BasicFunction.Section_Modulus(200, 5),
         )
         self.assertEqual(
             properties.moment_of_inertia_cm4,
-            sections.moment_of_inertia_cm4(200, 5),
+            BasicFunction.Moment_Inertia(200, 5),
         )
 
     def test_wind_coefficient_uses_actual_active_bottom_diameter(self):

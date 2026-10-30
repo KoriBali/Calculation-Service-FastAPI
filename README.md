@@ -30,31 +30,28 @@ Kode dibagi menjadi **engine** (rumus, Python murni) dan **fitur** (pintu HTTP).
 calculation_service/
 ├── app/
 │   ├── __init__.py            # create_app: error handler + registrasi router
-│   ├── engine/                # MESIN: port python_calc, TANPA FastAPI/pydantic
-│   │   ├── sections.py        # penampang + massa pipa
-│   │   ├── materials.py       # tegangan izin per material
-│   │   ├── conditions/        # angin (std 1-6), gempa, 8 arah
-│   │   ├── loads/             # tiang, direct object, overhead wire
-│   │   ├── geometry/          # susunan segmen tiang
-│   │   ├── calculators/       # pole, direct_object, overhead_wire, section_check
-│   │   └── results.py         # dataclass hasil
+│   ├── engine/                # MESIN: salinan python_calc, TANPA FastAPI/pydantic
+│   │   ├── basic_function.py  # = python_calc BasicFunction.py (penampang + massa pipa)
+│   │   ├── calculation_service.py  # = application/calculation_service.py
+│   │   ├── domain/            # = python_calc domain/: pole, direct object, OHW, arm,
+│   │   │                      #   material, kondisi, standards/ (DesignStandard + factory)
+│   │   └── calculation/       # = python_calc calculation/: calculator per objek,
+│   │                          #   policy (wind, seismic, stress, rounding), workflow per d_st
 │   ├── shared/                # dipakai lebih dari satu fitur
-│   │   ├── schemas/           # sub-schema input (pydantic)
+│   │   ├── schemas/           # sub-schema input (pydantic): pole, direct object, OHW, arm
 │   │   ├── adapters.py        # schema -> objek engine
-│   │   ├── mappers.py         # hasil engine -> JSON
 │   │   ├── errors.py          # 400 body bukan JSON object, 422 input tidak valid
 │   │   └── response.py        # amplop {success, data, unique_code}
 │   └── <fitur>/               # contoh: pole/
 │       ├── routes.py          # APIRouter + endpoint, tanpa logika hitung
 │       ├── schemas.py         # request khusus fitur (memakai shared/schemas)
 │       ├── services.py        # schema -> adapter -> engine -> mapper
-│       └── mappers.py         # bentuk response fitur
+│       └── mappers.py         # hasil engine -> data response (per design standard)
 ├── tools/                     # alat pengembangan (tidak dipakai runtime)
-│   ├── port.sh, port_python_calc.sed   # port file dari python_calc
-│   └── export_parity_fixtures.py       # buat fixture parity dari python_calc
+│   ├── port_engine.sh         # port seluruh engine + test dari python_calc
+│   └── port.sh, port_python_calc.sed   # port satu file (hanya import yang ditulis ulang)
 └── tests/
-    ├── engine/                # test unit engine (port dari python_calc/tests)
-    ├── parity/                # fixture python_calc + test "angka harus identik"
+    ├── engine/                # test python_calc, diport apa adanya
     └── api/                   # test endpoint lewat FastAPI TestClient
 ```
 
@@ -62,8 +59,15 @@ Aturan:
 
 - `app/engine/` hanya boleh meng-import stdlib dan `app.engine.*` (dijaga `tests/test_engine_boundary.py`).
 - Folder fitur tidak boleh meng-import folder fitur lain. Yang dipakai bersama dipindah ke `app/shared/`.
-- Rumus di engine adalah salinan python_calc. Perubahan rumus dilakukan di python_calc dulu, lalu fixture dibuat ulang dan engine diport ulang.
-- Selain salinan, engine hanya boleh memuat dua jenis tambahan, dan masing-masing ditandai komentar: `DEVIATION` (perilaku yang sengaja berbeda dari python_calc, saat ini hanya gempa opsional) dan `ADDITION` (nilai read-only untuk report yang tidak mengubah hasil apa pun, misalnya `weight_n`). Cari dengan `grep -rn "DEVIATION\|ADDITION" app/engine`.
+- Engine adalah salinan python_calc commit `270d23b` (rumus, rounding, policy per
+  design standard). `tools/port_engine.sh` menyalin file apa adanya dan hanya menulis
+  ulang import (`domain.` → `app.engine.domain.`, dst.). Engine tidak diubah di repo
+  ini: perubahan rumus dilakukan di python_calc dulu, lalu engine diport ulang.
+- Yang tidak diport: `application/output/` python_calc (penyusun nomor report PDF
+  lama). Response API disusun `app/<fitur>/mappers.py`; layout report adalah tugas gateway.
+- Engine membulatkan setiap nilai menurut rounding profile design standard
+  (`app/engine/calculation/rounding/`). Mapper tidak membulatkan ulang nilai engine; nilai
+  yang ia turunkan sendiri (mis. wind load per arm) memakai rounding profile yang sama.
 
 ## Instalasi & Persiapan
 
@@ -108,9 +112,9 @@ Kami menjaga kualitas kode dengan pengujian rutin dan linting otomatis:
     ```bash
     pipenv run pytest -q
     ```
-* **Membuat ulang fixture parity** (hanya bila rumus python_calc berubah; butuh `../python_calc`):
+* **Port ulang engine** (bila python_calc berubah; butuh clone python_calc di `../python_calc_V2`):
     ```bash
-    pipenv run python tools/export_parity_fixtures.py
+    PYTHON_CALC_REF=<commit> tools/port_engine.sh
     ```
 * **Linting (Ruff):**
     ```bash

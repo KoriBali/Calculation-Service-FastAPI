@@ -1,152 +1,26 @@
-"""POST /api/pole/calculate: contract, validation, and parity."""
+"""POST /api/pole/calculate (design standard 3, schema 2.0): contract and validation."""
 
 import copy
 
 import pytest
 
-from app.engine.rounding import python_calc_rounding
-from tests.parity.parity import assert_matches, case_names, load_fixture
+from app.pole.docs import REQUEST_EXAMPLES
 
 URL = "/api/pole/calculate"
 
-# Cases that the API can run before D6 (no overhead wire).
-API_CASES = [
-    name for name in case_names() if not load_fixture(name)["input"]["overhead_wires"]
-]
 
-# Engine ADDITION keys: in the response, not in the python_calc fixtures.
-ADDITION_KEYS = {
-    "weight_n",
-    "weight_per_unit_n",
-    "projected_area_per_unit_m2",
-    "wind_load_per_unit_n",
-}
-
-# Fields the engine kwargs carry but the API refuses for that variant.
-TAPER_ONLY = ("diameter_lower_mm", "diameter_upper_mm", "thickness_lower_mm", "thickness_upper_mm")
-DIRECTIONAL_ONLY = ("side_area_m2", "fixed_angle_deg")
+def example(name: str) -> dict:
+    return copy.deepcopy(REQUEST_EXAMPLES[name]["value"])
 
 
-def without_keys(value, keys: set[str]):
-    """Copy of ``value`` with ``keys`` removed at every depth."""
-    if isinstance(value, dict):
-        return {key: without_keys(item, keys) for key, item in value.items() if key not in keys}
-    if isinstance(value, list):
-        return [without_keys(item, keys) for item in value]
-    return value
-
-
-def to_request(case_input: dict, with_seismic: bool = True) -> dict:
-    """Fixture input (engine kwargs) -> request body (API contract).
-
-    Both are snake_case; only the variant-specific fields differ.
-    """
-    poles = []
-    for pole in case_input["poles"]:
-        body = dict(pole)
-        if pole["pole_type"] == "Straight":
-            body["diameter_mm"] = pole["diameter_lower_mm"]
-            body["thickness_mm"] = pole["thickness_lower_mm"]
-            for key in TAPER_ONLY:
-                del body[key]
-        poles.append(body)
-
-    direct_objects = []
-    for item in case_input["direct_objects"]:
-        body = dict(item)
-        if item["object_type"] == "Omni":
-            for key in DIRECTIONAL_ONLY:
-                del body[key]
-        direct_objects.append(body)
-
-    request = {
-        "wind": dict(case_input["wind"]),
-        "overdesign_factor": case_input["overdesign_factor"],
-        "base_elevation_m": case_input["base_elevation_m"],
-        "poles": poles,
-        "direct_objects": direct_objects,
-        "evaluated_positions_m": case_input["evaluated_positions_m"],
-    }
-    if with_seismic:
-        request["seismic"] = dict(case_input["seismic"])
-    return request
-
-
-@pytest.mark.parametrize("with_seismic", [True, False], ids=["seismic", "no-seismic"])
-@pytest.mark.parametrize("name", API_CASES)
-def test_response_matches_python_calc(client, name, with_seismic):
-    """Mapping and shape check: the fixtures hold python_calc rounding."""
-    fixture = load_fixture(name)
-    with python_calc_rounding():
-        response = client.post(URL, json=to_request(fixture["input"], with_seismic))
-
-    assert response.status_code == 200, response.json()
-    body = response.json()
-    assert body["success"] is True
-    data = body["data"]
-    assert data["checks"] == (["wind", "seismic"] if with_seismic else ["wind"])
-
-    for actual, expected in zip(
-        data["evaluated_positions"], fixture["expected"]["positions"], strict=True
-    ):
-        label = f"{name}@{expected['evaluated_position_m']}"
-        assert actual["evaluated_position_m"] == expected["evaluated_position_m"]
-        for key in ("pole", "direct_object", "section_check"):
-            assert_matches(
-                without_keys(actual[key], ADDITION_KEYS),
-                expected[key],
-                f"{label}.{key}",
-                seismic_absent=not with_seismic,
-    )            
-            
-VBA_CASE = {
-    "wind": {"design_standard": 3, "structure_height_m": 8.0},
-    "seismic": {"position": "Ground", "k_value": 0.3},
-    "poles": [{
-        "name": "P1", "pole_type": "Straight", "diameter_mm": 139.8,
-        "thickness_mm": 4.5, "material": "STK400", "top_elevation_m": 8.0,
-    }],
-    "direct_objects": [{
-        "name": "LAMP", "object_type": "Omni", "front_area_m2": 0.123,
-        "mass_per_unit_kg": 12.5, "elevation_m": 7.5,
-        "base_wind_coefficient": 1.2, "quantity": 2,
-    }],
-    "evaluated_positions_m": [0.0],
-}
-
-
-def test_response_carries_vba_rounded_values(client):
-    """Same case as tests/engine/test_vba_rounding.py, read through the API."""
-    response = client.post(URL, json=VBA_CASE)
-
-    assert response.status_code == 200, response.json()
-    position = response.json()["data"]["evaluated_positions"][0]
-    pole = position["pole"]["pole_results"][0]
-    lamp = position["direct_object"]["direct_object_results"][0]
-    north = position["section_check"]["directional_results"][0]
-
-    assert pole["wind_load_n"] == 1740.0
-    assert pole["weight_n"] == 1180.0
-    assert lamp["weight_per_unit_n"] == 123.0
-    assert lamp["directional_results"][0]["wind_load_per_unit_n"] == 327.0
-    assert north["combined_wind_moment_nm"] == 11900.0
-    assert north["wind_strength"]["utilization_ratio"] == 0.809
-    assert north["wind_strength"]["status"] == "O.K"
-
-
-def test_camel_case_body_is_rejected(client):
-    """The contract is snake_case only; camelCase is converted by the gateway."""
-    body = {
-        "wind": {"designStandard": 3, "structureHeightM": 8.0},
-        "poles": [{
-            "name": "P", "poleType": "Straight", "diameterMm": 139.8,
-            "thicknessMm": 4.5, "material": "STK400", "topElevationM": 8.0,
-        }],
-        "evaluatedPositionsM": [0.0],
-    }
+def calculate(client, body: dict) -> dict:
     response = client.post(URL, json=body)
-    assert response.status_code == 422
-    assert "evaluatedPositionsM" in error_fields(response)
+    assert response.status_code == 200, response.json()
+    return response.json()["data"]
+
+
+def error_fields(response) -> set[str]:
+    return {item["field"] for item in response.json()["errors"]}
 
 
 def all_keys(value) -> set[str]:
@@ -157,38 +31,156 @@ def all_keys(value) -> set[str]:
     return set()
 
 
-@pytest.mark.parametrize("name", API_CASES)
-def test_response_keys_are_snake_case(client, name):
-    response = client.post(URL, json=to_request(load_fixture(name)["input"]))
-    camel = {key for key in all_keys(response.json()) if key != key.lower()}
+def all_checks(data: dict) -> list[dict]:
+    return [check for arm in data["arms"] for check in arm["checks"]] + [
+        check
+        for position in data["evaluated_positions"]
+        for case in position["wind_cases"]
+        for check in case["checks"]
+    ]
+
+
+# ===== Contract =====
+@pytest.mark.parametrize("name", REQUEST_EXAMPLES)
+def test_every_openapi_example_returns_200(client, name):
+    data = calculate(client, example(name))
+    assert data["schema_version"] == "2.0"
+    assert data["design_standard"] == {"code": 3, "name": "Old Lighting Pole"}
+
+
+@pytest.mark.parametrize("name", REQUEST_EXAMPLES)
+def test_response_keys_are_snake_case_and_statuses_are_codes(client, name):
+    data = calculate(client, example(name))
+    camel = {key for key in all_keys(data) if key != key.lower()}
     assert not camel, f"camelCase keys in response: {sorted(camel)}"
+    assert {check["status"] for check in all_checks(data)} <= {"OK", "NG"}
+    assert data["summary"]["status"] in {"OK", "NG"}
 
 
-def base_request() -> dict:
-    return to_request(load_fixture("case_pole_only_std2")["input"])
+def test_case_3_matches_python_calc_report_values(client):
+    """The values python_calc 270d23b locks for its Case 3 report (tests/test_standard_output.py)."""
+    data = calculate(client, example("arm_and_overhead_wire"))
+    conditions = data["conditions"]
+    assert (conditions["wind_speed_m_s"], conditions["air_density_kg_m3"]) == (60.0, 1.23)
+    assert conditions["wind_pressure_n_m2"] == 2214.0
+    assert conditions["wind_cases"] == [{"code": "STRAIGHT", "angle_deg": 90.0}]
+
+    arm = data["arms"][0]
+    assert arm["specification"]["section_modulus_cm3"] == 9.03
+    assert arm["totals"] == {"fix_load_n": 146.7, "fix_load_moment_nm": 25.5, "wind_moment_nm": 53.3}
+    assert arm["checks"][0]["moment_nm"] == 59.1
+    assert arm["checks"][0]["utilization_ratio"] == 0.028
+    assert [item["object_type"] for item in arm["objects"]] == ["ArmBody", "Omni"]
+
+    position = data["evaluated_positions"][0]
+    assert position["section"]["section_modulus_cm3"] == 89.81
+    assert position["vertical_fix_load_n"] == 1343.4
+    (case,) = position["wind_cases"]
+    assert [row["kind"] for row in case["load_rows"]] == ["ARM", "OVERHEAD_WIRE", "POLE", "POLE"]
+    arm_row = case["load_rows"][0]
+    assert arm_row["wind_load_n"] == 304.8
+    assert (arm_row["projected_area_m2"], arm_row["wind_coefficient"]) == (None, None)
+    assert case["totals"]["wind_load_n"] == 2398.4
+    assert case["totals"]["arm_fix_load_moment_nm"] == 25.5
+    assert case["totals"]["resultant_horizontal_load_n"] == 2623.7
+    assert case["totals"]["combined_moment_nm"] == 13992.1
+    check = case["checks"][0]
+    assert (check["stress_n_mm2"], check["utilization_ratio"], check["status"]) == (155.8, 0.663, "OK")
+
+    assert data["summary"] == {
+        "status": "OK",
+        "governing": {
+            "component": "pole",
+            "name": "Pole-2",
+            "evaluated_position_m": 0.0,
+            "wind_case": "STRAIGHT",
+            "check": "pole_bending",
+            "utilization_ratio": 0.663,
+        },
+    }
 
 
-def error_fields(response) -> set[str]:
-    return {item["field"] for item in response.json()["errors"]}
+def test_oblique_wind_adds_a_case_everywhere(client):
+    data = calculate(client, example("direct_object_oblique"))
+    expected = ["STRAIGHT", "OBLIQUE"]
+    assert [case["code"] for case in data["conditions"]["wind_cases"]] == expected
+    for position in data["evaluated_positions"]:
+        assert [case["code"] for case in position["wind_cases"]] == expected
 
 
+def test_summary_is_ng_when_any_check_fails(client):
+    body = example("pole_only")
+    body["direct_objects"] = [{
+        "name": "Heavy sign", "object_type": "Omni", "front_area_m2": 3.0,
+        "mass_per_unit_kg": 50, "elevation_m": 6.0, "base_wind_coefficient": 1.2, "quantity": 1,
+    }]
+    data = calculate(client, body)
+    ratios = [check["utilization_ratio"] for check in all_checks(data)]
+    assert data["summary"]["status"] == "NG"
+    assert data["summary"]["governing"]["utilization_ratio"] == max(ratios) > 1.0
+
+
+def test_wire_and_arm_below_every_position_are_still_reported(client):
+    body = example("arm_and_overhead_wire")
+    body["arms"][0]["installation_height_m"] = 5.0
+    body["overhead_wires"][0]["elevation_m"] = 5.0
+    body["evaluated_positions_m"] = [8.0]
+    data = calculate(client, body)
+    assert [arm["name"] for arm in data["arms"]] == ["Arm-1"]
+    assert [wire["name"] for wire in data["overhead_wires"]] == ["OHW-1"]
+    kinds = {row["kind"] for row in data["evaluated_positions"][0]["wind_cases"][0]["load_rows"]}
+    assert kinds == {"POLE"}
+
+
+# ===== Upper/lower and Omni: ignored values do not change any result =====
+def test_straight_pole_ignores_upper_values(client):
+    plain = example("direct_object_oblique")
+    with_upper = example("direct_object_oblique")
+    for pole in with_upper["poles"]:
+        if pole["pole_type"] == "Straight":
+            pole.update(diameter_upper_mm=999, thickness_upper_mm=99)
+    assert calculate(client, with_upper) == calculate(client, plain)
+
+
+def test_omni_objects_ignore_side_area_and_angle(client):
+    plain = example("arm_and_overhead_wire")
+    plain["direct_objects"] = [{
+        "name": "Lamp", "object_type": "Omni", "front_area_m2": 0.2,
+        "mass_per_unit_kg": 10, "elevation_m": 10.1, "base_wind_coefficient": 1.0, "quantity": 2,
+    }]
+    with_side = copy.deepcopy(plain)
+    with_side["direct_objects"][0].update(side_area_m2=5.0, fixed_angle_deg=30)
+    with_side["arms"][0]["objects"][0]["side_area_m2"] = 5.0
+    assert calculate(client, with_side) == calculate(client, plain)
+
+
+# ===== Validation =====
 @pytest.mark.parametrize(
     ("change", "field"),
     [
-        (lambda r: r["wind"].update(design_standard=1), "wind.1.atmospheric_category"),
-        (lambda r: r["wind"].update(design_standard=9), "wind"),
-        (lambda r: r["wind"].update(atmospheric_category=2), "wind.2.atmospheric_category"),
-        (lambda r: r.update(seismic={"position": "Rooftop"}), "seismic.Rooftop.seismic_class"),
-        (lambda r: r["poles"][0].update(material="SS400"), "poles.0.Straight.material"),
-        (lambda r: r["poles"][0].pop("thickness_mm"), "poles.0.Straight.thickness_mm"),
+        (lambda r: r.update(design_standard=2), "design_standard"),
+        (lambda r: r.update(seismic={"position": "Ground", "k_value": 0.5}), "seismic"),
+        (lambda r: r.update(wind={"design_standard": 3}), "wind"),
+        (lambda r: r["poles"][1].pop("diameter_upper_mm"), "poles.1"),
+        (lambda r: r["poles"][0].pop("thickness_lower_mm"), "poles.0.thickness_lower_mm"),
+        (lambda r: r["poles"][0].update(material="SS400"), "poles.0.material"),
+        (lambda r: r["poles"][0].update(diameter_mm=175), "poles.0.diameter_mm"),
         (lambda r: r.update(poles=[]), "poles"),
         (lambda r: r.update(evaluated_positions_m=[]), "evaluated_positions_m"),
-        (lambda r: r.update(overhead_wires=[]), "overhead_wires"),
         (lambda r: r.update(overdesign_factor=0), "overdesign_factor"),
+        (lambda r: r["arms"][0]["objects"][0].update(object_type="Directional"), "arms.0.objects.0"),
+        (lambda r: r["arms"][0]["objects"][0].update(object_type="ArmBody"), "arms.0.objects.0.object_type"),
+        (lambda r: r["overhead_wires"][0].pop("span_length_m"), "overhead_wires.0.span_length_m"),
+    ],
+    ids=[
+        "other-standard", "seismic-not-allowed", "old-wind-object", "taper-without-upper",
+        "missing-lower", "unknown-material", "old-straight-field", "no-poles", "no-positions",
+        "zero-overdesign", "directional-arm-object-without-side", "arm-body-is-generated",
+        "wire-without-span",
     ],
 )
 def test_schema_errors_return_422_with_field(client, change, field):
-    request = copy.deepcopy(base_request())
+    request = example("arm_and_overhead_wire")
     change(request)
     response = client.post(URL, json=request)
     assert response.status_code == 422
@@ -196,26 +188,65 @@ def test_schema_errors_return_422_with_field(client, change, field):
     assert field in error_fields(response)
 
 
+def test_directional_direct_object_needs_side_area_and_angle(client):
+    request = example("direct_object_oblique")
+    del request["direct_objects"][0]["fixed_angle_deg"]
+    response = client.post(URL, json=request)
+    assert response.status_code == 422
+    assert "direct_objects.0" in error_fields(response)
+
+
 @pytest.mark.parametrize(
     "change",
     [
         lambda r: r["poles"].append(dict(r["poles"][0], top_elevation_m=9.0)),
+        lambda r: r["poles"].append(dict(r["poles"][0], name="Pole-9")),
+        lambda r: r["arms"][0]["objects"].append(dict(r["arms"][0]["objects"][0])),
+        lambda r: r["overhead_wires"].append(dict(r["overhead_wires"][0])),
         lambda r: r.update(evaluated_positions_m=[1.0, 1.0]),
-        lambda r: r.update(evaluated_positions_m=[0.0]),  # base is 0.5
+        lambda r: r.update(base_elevation_m=-0.5, evaluated_positions_m=[-1.0]),
     ],
-    ids=["duplicate-pole-name", "duplicate-position", "below-base"],
+    ids=[
+        "duplicate-pole-name", "duplicate-top-elevation", "duplicate-arm-object-name",
+        "duplicate-wire-name", "duplicate-position", "below-base",
+    ],
 )
 def test_cross_field_errors_return_422(client, change):
-    request = copy.deepcopy(base_request())
+    request = example("arm_and_overhead_wire")
     change(request)
     assert client.post(URL, json=request).status_code == 422
 
 
-def test_engine_rule_error_returns_422_with_message(client):
-    request = base_request() | {"evaluated_positions_m": [6.0]}  # top of the only pole
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda r: r.update(evaluated_positions_m=[10.1]), "EvaluatedPosition must be below the top"),
+        (lambda r: r["arms"][0].update(exposed_length_m=1.0), "exposed_length_m cannot exceed total_length_m"),
+        (lambda r: r["arms"][0].update(thickness_mm=40), "thickness_mm must be less than half the diameter"),
+    ],
+    ids=["position-at-top", "arm-exposed-too-long", "arm-too-thick"],
+)
+def test_engine_rule_error_returns_422_with_message(client, change, message):
+    request = example("arm_and_overhead_wire")
+    change(request)
     response = client.post(URL, json=request)
     assert response.status_code == 422
-    assert "EvaluatedPosition must be below the top" in response.json()["message"]
+    assert message in response.json()["message"]
+
+
+def test_camel_case_body_is_rejected(client):
+    """The contract is snake_case only; camelCase is converted by the gateway."""
+    body = {
+        "designStandard": 3,
+        "poles": [{
+            "name": "P", "poleType": "Straight", "diameterLowerMm": 139.8,
+            "thicknessLowerMm": 4.5, "material": "STK400", "topElevationM": 8.0,
+        }],
+        "evaluatedPositionsM": [0.0],
+    }
+    response = client.post(URL, json=body)
+    assert response.status_code == 422
+    assert "evaluatedPositionsM" in error_fields(response)
 
 
 @pytest.mark.parametrize(
@@ -236,54 +267,3 @@ def test_non_json_object_body_returns_400(client, content, content_type):
         "success": False,
         "message": "Request body harus berupa JSON object",
     }
-
-def test_response_carries_report_additions(client):
-    """Values the gateway needs for the report, without computing anything."""
-    request = to_request(load_fixture("case_std6_rooftop_mixed")["input"])
-    data = client.post(URL, json=request).json()["data"]
-
-    assert data["design_condition"]["wind"]["design_wind_speed_m_s"] == (
-        request["wind"]["basic_wind_speed_m_s"]
-    )
-    position = data["evaluated_positions"][0]
-    for segment in position["pole"]["pole_results"]:
-        assert segment["weight_n"] > 0
-    for item in position["direct_object"]["direct_object_results"]:
-        assert item["weight_per_unit_n"] * item["quantity"] == pytest.approx(item["fix_load_n"])
-        for directional in item["directional_results"]:
-            assert directional["wind_load_per_unit_n"] * item["quantity"] == pytest.approx(
-                directional["wind_load_n"]
-            )
-
-
-def test_fixed_standard_reports_its_design_wind_speed(client):
-    data = client.post(URL, json=base_request()).json()["data"]
-    assert data["design_condition"]["wind"]["design_wind_speed_m_s"] == 60.0
-
-
-@pytest.mark.parametrize(
-    ("seismic", "expected"),
-    [
-        (None, None),
-        (
-            {"position": "Ground", "k_value": 0.5},
-            {"position": "Ground", "seismic_class": None, "k_value": 0.5},
-        ),
-        (
-            {"position": "Rooftop", "seismic_class": "A"},
-            {"position": "Rooftop", "seismic_class": "A", "k_value": 1.5},
-        ),
-        (
-            {"position": "Rooftop", "seismic_class": "S"},
-            {"position": "Rooftop", "seismic_class": "S", "k_value": 2.0},
-        ),
-    ],
-    ids=["none", "ground", "rooftop-a", "rooftop-s"],
-)
-def test_design_condition_reports_the_k_value_used(client, seismic, expected):
-    """Rooftop sends only the class; the gateway must not keep its own K table."""
-    request = to_request(load_fixture("case_pole_only_std2")["input"], with_seismic=False)
-    if seismic is not None:
-        request["seismic"] = seismic
-    data = client.post(URL, json=request).json()["data"]
-    assert data["design_condition"]["seismic"] == expected

@@ -1,12 +1,12 @@
 """Tests for assembled pole geometry at evaluated positions.
 
-Ported from python_calc ``tests/test_pole_assembly.py``.
+Ported from python_calc ``tests/test_pole_assembly.py`` (commit 270d23b).
 """
 
 import unittest
 
-from app.engine.geometry.pole_assembly import PoleAssembly
-from app.engine.loads.pole import PoleObject
+from app.engine.calculation.pole_assembly import PoleAssembly
+from app.engine.domain.pole import PoleObject
 
 
 def pole(name, top, diameter):

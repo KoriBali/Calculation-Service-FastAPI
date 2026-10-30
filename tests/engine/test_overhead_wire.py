@@ -1,15 +1,15 @@
 """Tests for OHW load, tension, moment, and aggregation.
 
-Ported from python_calc ``tests/test_overhead_wire.py``.
+Ported from python_calc ``tests/test_overhead_wire.py`` (commit 270d23b).
 """
 
 import unittest
 from math import cos, radians
 
-from app.engine.calculators.overhead_wire import OverheadWireCalculator
-from app.engine.conditions.seismic import SeismicCondition
-from app.engine.conditions.wind import WindCondition
-from app.engine.loads.overhead_wire import OverheadWire
+from app.engine.calculation.overhead_wire_calculator import OverheadWireCalculator
+from app.engine.calculation.rounding import CalculationValueType
+from app.engine.domain.conditions import SeismicCondition, WindCondition
+from app.engine.domain.overhead_wire import OverheadWire
 
 
 def make_wire(name="W1", elevation=10, fixed_angle=0, vertical_angle=0):
@@ -92,10 +92,19 @@ class OverheadWireCalculatorTests(unittest.TestCase):
     def test_seismic_load_uses_fixload_times_k_value(self):
         result = self.calculator.calculate_one(self.upper, 4)
 
-        self.assertEqual(result.seismic_load_n, result.fix_load_n * 0.5)
+        self.assertEqual(
+            result.seismic_load_n,
+            self.calculator.rounding.apply(
+                result.fix_load_n * 0.5,
+                CalculationValueType.LOAD,
+            ),
+        )
         self.assertEqual(
             result.seismic_moment_nm,
-            result.seismic_load_n * 6,
+            self.calculator.rounding.apply(
+                result.seismic_load_n * 6,
+                CalculationValueType.MOMENT,
+            ),
         )
 
     def test_seismic_tension_moment_varies_with_angle_of_attack(self):
