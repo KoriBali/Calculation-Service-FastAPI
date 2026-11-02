@@ -1,4 +1,4 @@
-"""POST /api/pole/calculate (design standard 3, schema 2.1): contract and validation."""
+"""POST /api/pole/calculate (design standard 3, schema 2.2): contract and validation."""
 
 import copy
 
@@ -44,7 +44,7 @@ def all_checks(data: dict) -> list[dict]:
 @pytest.mark.parametrize("name", REQUEST_EXAMPLES)
 def test_every_openapi_example_returns_200(client, name):
     data = calculate(client, example(name))
-    assert data["schema_version"] == "2.1"
+    assert data["schema_version"] == "2.2"
     assert data["design_standard"] == {"code": 3, "name": "Old Lighting Pole"}
 
 
@@ -67,13 +67,33 @@ def test_case_3_matches_python_calc_report_values(client):
 
     arm = data["arms"][0]
     assert arm["specification"]["section_modulus_cm3"] == 9.03
+    assert arm["specification"]["unit_weight_kg_m"] == 5.31
     assert arm["totals"] == {"fix_load_n": 146.7, "fix_load_moment_nm": 25.5, "wind_moment_nm": 53.3}
     assert arm["checks"][0]["moment_nm"] == 59.1
     assert arm["checks"][0]["utilization_ratio"] == 0.028
     assert [item["object_type"] for item in arm["objects"]] == ["ArmBody", "Omni"]
 
+    straight, taper = data["pole_sections"]
+    assert (straight["name"], taper["name"]) == ("Pole-2", "Pole-1")
+    assert straight == {
+        "name": "Pole-2",
+        "pole_type": "Straight",
+        "material": "STK400",
+        "diameter_mm": 175.0,
+        "thickness_mm": 4.0,
+        "cross_section_area_cm2": 21.49,
+        "moment_of_inertia_cm4": 785.86,
+        "radius_of_gyration_cm": 6.05,
+        "unit_weight_kg_m": 16.87,
+    }
+
     position = data["evaluated_positions"][0]
-    assert position["section"]["section_modulus_cm3"] == 89.81
+    assert position["section"] == {
+        "material": "STK400",
+        "diameter_mm": 175.0,
+        "thickness_mm": 4.0,
+        "section_modulus_cm3": 89.81,
+    }
     assert position["vertical_fix_load_n"] == 1343.4
     (case,) = position["wind_cases"]
     assert [row["kind"] for row in case["load_rows"]] == ["ARM", "OVERHEAD_WIRE", "POLE", "POLE"]
@@ -153,6 +173,22 @@ def test_wire_and_arm_below_every_position_are_still_reported(client):
     assert [wire["name"] for wire in data["overhead_wires"]] == ["OHW-1"]
     kinds = {row["kind"] for row in data["evaluated_positions"][0]["wind_cases"][0]["load_rows"]}
     assert kinds == {"POLE"}
+
+
+def test_every_step_pole_has_a_section_at_its_lower_end(client):
+    body = example("direct_object_oblique")
+    body["evaluated_positions_m"] = [0.0]  # only Pole-3 holds a check position
+    data = calculate(client, body)
+    sections = {item["name"]: item for item in data["pole_sections"]}
+    assert list(sections) == ["Pole-1", "Pole-2", "Pole-3"]
+    assert sections["Pole-1"]["diameter_mm"] == 75.0
+    assert (sections["Pole-1"]["cross_section_area_cm2"], sections["Pole-1"]["unit_weight_kg_m"]) == (9.97, 7.82)
+    # The taper is taken at its lower diameter, the same as Pole-3 below it.
+    assert {**sections["Pole-2"], "name": None, "pole_type": None} == {
+        **sections["Pole-3"],
+        "name": None,
+        "pole_type": None,
+    }
 
 
 # ===== Upper/lower and Omni: ignored values do not change any result =====

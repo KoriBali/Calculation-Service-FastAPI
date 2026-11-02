@@ -35,16 +35,22 @@ tiang di setiap elevasi dalam `evaluated_positions_m`, dan cek lentur tiap arm.
 Envelope `{"success": true, "data": {...}}`. Semua nilai sudah dibulatkan engine
 (aturan rounding design standard). Key mencantumkan satuan (`_m`, `_n`, `_nm`,
 `_n_mm2`, ...). Isi `data`:
-- `schema_version`: `"2.1"`. Simpan bersama hasil.
+- `schema_version`: `"2.2"`. Simpan bersama hasil.
 - `summary.status`: `"OK"` atau `"NG"`, dari seluruh `checks` (tiang dan arm).
   `summary.governing`: check dengan `utilization_ratio` terbesar.
 - `conditions`: wind speed, air density, wind pressure, gravity, dan `wind_cases`
   yang dihitung (`STRAIGHT` 90°, plus `OBLIQUE` 45° bila `include_oblique_wind`).
 - `overhead_wires[]`: satu item per kabel: tension akibat FixLoad dan, per wind
   case, line load serta tension saat angin.
-- `arms[]`: satu item per arm: specification, `objects[]` (index 0 = badan arm,
-  lalu objek dari yang terjauh), total, dan `checks` (`arm_bending`).
-- `evaluated_positions[]`: satu item per elevasi: `section` tiang, total FixLoad
+- `arms[]`: satu item per arm: `specification` (termasuk `unit_weight_kg_m`),
+  `objects[]` (index 0 = badan arm, lalu objek dari yang terjauh), total, dan
+  `checks` (`arm_bending`).
+- `pole_sections[]`: satu item per step pole, urut seperti `poles`: section area,
+  moment of inertia, radius of gyration, dan `unit_weight_kg_m`, dihitung di
+  diameter dan tebal lower. Ada untuk setiap step pole, termasuk yang tidak
+  punya posisi cek.
+- `evaluated_positions[]`: satu item per elevasi: `section` tiang (diameter,
+  tebal, dan section modulus yang dipakai cek tegangan), total FixLoad
   vertikal, dan `wind_cases[]`. Tiap wind case berisi `load_rows[]` (urutan
   ARM, DIRECT_OBJECT, OVERHEAD_WIRE, POLE dari atas), `totals`, dan `checks`
   (`pole_bending`). Baris ARM tidak punya `projected_area_m2` / `wind_coefficient`

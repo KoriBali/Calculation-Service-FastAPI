@@ -17,7 +17,7 @@ from .result import (
 )
 from app.engine.domain.conditions import SeismicCondition, WindCondition
 from app.engine.domain.loads import OverdesignFactor
-from app.engine.domain.pole import PoleObject
+from app.engine.domain.pole import PoleObject, PoleSectionProperties
 from .rounding import CalculationValueType, rounding_profile_for
 from .seismic import SeismicPolicy, seismic_policy_for
 from .gravity import gravity_for_standard
@@ -141,8 +141,34 @@ class PoleCalculator:
             for direction in self.wind_condition.directions
         )
 
-        section_properties = pole.section_properties(diameter_bottom)
-        section_properties = replace(
+        section_properties = self.section_properties(pole, diameter_bottom)
+
+        return PoleCalculationResult(
+            geometry=geometry,
+            section_properties=section_properties,
+            nnc=nnc,
+            kz=kz,
+            cf=cf,
+            wind_pressure_n_m2=wind_pressure,
+            projected_area_m2=projected_area,
+            mass_kg=mass,
+            overdesign_factor=self.overdesign_factor.value,
+            fix_load_n=fix_load,
+            wind_load_n=wind_load,
+            seismic_load_n=seismic_load,
+            wind_moment_nm=wind_moment,
+            seismic_moment_nm=seismic_moment,
+            directional_results=directional_results,
+        )
+
+    def section_properties(
+        self,
+        pole: PoleObject,
+        diameter_mm: float,
+    ) -> PoleSectionProperties:
+        """Return ``pole`` section properties at ``diameter_mm``, rounded."""
+        section_properties = pole.section_properties(diameter_mm)
+        return replace(
             section_properties,
             cross_section_area_cm2=self.rounding.apply(
                 section_properties.cross_section_area_cm2,
@@ -164,24 +190,10 @@ class PoleCalculator:
                 section_properties.radius_of_gyration_cm,
                 CalculationValueType.RADIUS_OF_GYRATION,
             ),
-        )
-
-        return PoleCalculationResult(
-            geometry=geometry,
-            section_properties=section_properties,
-            nnc=nnc,
-            kz=kz,
-            cf=cf,
-            wind_pressure_n_m2=wind_pressure,
-            projected_area_m2=projected_area,
-            mass_kg=mass,
-            overdesign_factor=self.overdesign_factor.value,
-            fix_load_n=fix_load,
-            wind_load_n=wind_load,
-            seismic_load_n=seismic_load,
-            wind_moment_nm=wind_moment,
-            seismic_moment_nm=seismic_moment,
-            directional_results=directional_results,
+            mass_per_meter_kg_m=self.rounding.apply(
+                section_properties.mass_per_meter_kg_m,
+                CalculationValueType.WEIGHT_PER_METER,
+            ),
         )
 
     def _mass_and_fix_load(

@@ -1,4 +1,4 @@
-"""Design standard 3 engine results -> response ``data`` (schema 2.1).
+"""Design standard 3 engine results -> response ``data`` (schema 2.2).
 
 The engine already rounds every value (rounding profile of the design
 standard). This module only selects and arranges values; the few values it
@@ -15,10 +15,11 @@ from app.engine.calculation.gravity import gravity_for_standard
 from app.engine.calculation.result import Standard34CalculationResult
 from app.engine.calculation.rounding import CalculationValueType, rounding_profile_for
 from app.engine.domain.arm import ArmPart
+from app.engine.domain.pole import PoleSectionProperties
 from app.engine.domain.standards import DesignStandard
 from app.pole.schemas import PoleCalculationRequest
 
-SCHEMA_VERSION = "2.1"
+SCHEMA_VERSION = "2.2"
 
 OK = "OK"
 NG = "NG"
@@ -46,6 +47,7 @@ def map_standard_3(
     request: PoleCalculationRequest,
     standard: DesignStandard,
     positions: tuple[Standard34CalculationResult, ...],
+    pole_sections: tuple[PoleSectionProperties, ...],
     wires,
     wire_results,
     arm_parts: tuple[ArmPart, ...],
@@ -84,6 +86,10 @@ def map_standard_3(
             for wire, result in zip(wires, wire_results, strict=True)
         ],
         "arms": arms,
+        "pole_sections": [
+            _pole_section(pole, section)
+            for pole, section in zip(request.poles, pole_sections, strict=True)
+        ],
         "evaluated_positions": evaluated_positions,
     }
 
@@ -152,6 +158,7 @@ def _arm(standard: DesignStandard, part: ArmPart, result) -> dict:
             "section_modulus_cm3": spec.section_modulus_cm3,
             "moment_of_inertia_cm4": spec.moment_of_inertia_cm4,
             "radius_of_gyration_cm": spec.radius_of_gyration_cm,
+            "unit_weight_kg_m": spec.mass_per_meter_kg_m,
             "mass_kg": spec.mass_kg,
             "fix_load_n": spec.fix_load_n,
             "front_projected_area_m2": spec.front_projected_area_m2,
@@ -205,6 +212,22 @@ def _arm_object(standard: DesignStandard, part: ArmPart, spec, result) -> dict:
     }
 
 
+# ===== Step pole sections (independent of the evaluated position) =====
+def _pole_section(pole, section: PoleSectionProperties) -> dict:
+    # Taken at the lower end: the lower diameter and thickness of the step pole.
+    return {
+        "name": pole.name,
+        "pole_type": pole.pole_type,
+        "material": pole.material,
+        "diameter_mm": section.diameter_mm,
+        "thickness_mm": section.thickness_mm,
+        "cross_section_area_cm2": section.cross_section_area_cm2,
+        "moment_of_inertia_cm4": section.moment_of_inertia_cm4,
+        "radius_of_gyration_cm": section.radius_of_gyration_cm,
+        "unit_weight_kg_m": section.mass_per_meter_kg_m,
+    }
+
+
 # ===== Evaluated positions =====
 def _evaluated_position(rounding, result: Standard34CalculationResult) -> dict:
     section = result.section_properties
@@ -216,10 +239,7 @@ def _evaluated_position(rounding, result: Standard34CalculationResult) -> dict:
             "material": result.material_name,
             "diameter_mm": section.diameter_mm,
             "thickness_mm": section.thickness_mm,
-            "cross_section_area_cm2": section.cross_section_area_cm2,
             "section_modulus_cm3": section.section_modulus_cm3,
-            "moment_of_inertia_cm4": section.moment_of_inertia_cm4,
-            "radius_of_gyration_cm": section.radius_of_gyration_cm,
         },
         "vertical_fix_load_n": result.total_fix_load_n,
         "wind_cases": [

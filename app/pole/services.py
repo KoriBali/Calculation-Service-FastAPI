@@ -27,10 +27,11 @@ def calculate_pole(request: PoleCalculationRequest) -> dict:
         )
         wires = tuple(to_overhead_wire(wire) for wire in request.overhead_wires)
         arm_parts = tuple(to_arm_part(arm) for arm in request.arms)
+        poles = tuple(to_pole_object(pole) for pole in request.poles)
         workflow = Standard34CalculationWorkflow(
             design_standard=standard,
             pole_assembly=PoleAssembly(
-                [to_pole_object(pole) for pole in request.poles],
+                list(poles),
                 base_elevation_m=request.base_elevation_m,
             ),
             direct_objects=[to_direct_object(item) for item in request.direct_objects],
@@ -39,6 +40,13 @@ def calculate_pole(request: PoleCalculationRequest) -> dict:
             overdesign_factor=OverdesignFactor(request.overdesign_factor),
         )
         positions = CalculationService(workflow).calculate(request.evaluated_positions_m)
+
+        # Section properties belong to the step pole, not to an evaluated
+        # position: every step pole is reported once, at its lower end.
+        pole_sections = tuple(
+            workflow.pole_calculator.section_properties(pole, pole.diameter_lower_mm)
+            for pole in poles
+        )
 
         # Wire tension and the arm check belong to the wire or arm, not to an
         # evaluated position. Each is calculated at its own elevation, so every
@@ -66,6 +74,7 @@ def calculate_pole(request: PoleCalculationRequest) -> dict:
         request=request,
         standard=standard,
         positions=positions,
+        pole_sections=pole_sections,
         wires=wires,
         wire_results=wire_results,
         arm_parts=arm_parts,

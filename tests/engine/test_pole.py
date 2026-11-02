@@ -148,6 +148,10 @@ class PoleObjectTests(unittest.TestCase):
             properties.moment_of_inertia_cm4,
             BasicFunction.Moment_Inertia(200, 5),
         )
+        self.assertEqual(
+            properties.mass_per_meter_kg_m,
+            BasicFunction.Pole_WeightKg_perMeter(200, 5),
+        )
 
     def test_wind_coefficient_uses_actual_active_bottom_diameter(self):
         pole = PoleObject(

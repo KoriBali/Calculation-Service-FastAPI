@@ -17,7 +17,8 @@ class PoleSectionProperties:
     """Cross-sectional properties at an evaluated position.
 
     Units follow ``M_Func_Basic.bas``: area in cm², section modulus in cm³,
-    moment of inertia in cm⁴, and radius of gyration in cm.
+    moment of inertia in cm⁴, radius of gyration in cm, and mass per metre
+    (unit weight) in kg/m.
     """
 
     diameter_mm: float
@@ -27,6 +28,7 @@ class PoleSectionProperties:
     moment_of_inertia_cm4: float
     second_moment_pair_cm4: float
     radius_of_gyration_cm: float
+    mass_per_meter_kg_m: float
 
 
 class PoleType(str, Enum):
@@ -161,6 +163,10 @@ class PoleObject(LoadObject):
             moment_of_inertia_cm4=moment_of_inertia,
             second_moment_pair_cm4=round(moment_of_inertia * 2, 3),
             radius_of_gyration_cm=BasicFunction.Radius_Gyration(
+                diameter_at_position_mm,
+                thickness,
+            ),
+            mass_per_meter_kg_m=BasicFunction.Pole_WeightKg_perMeter(
                 diameter_at_position_mm,
                 thickness,
             ),
