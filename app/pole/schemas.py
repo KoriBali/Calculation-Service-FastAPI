@@ -19,6 +19,18 @@ class PoleCalculationRequest(ApiModel):
     design_standard: Literal[3] = Field(
         description="Design standard. Saat ini hanya 3 (Old Lighting Pole) yang dibuka."
     )
+    wind_speed_m_s: PositiveFloat = Field(
+        description=(
+            "Kecepatan angin rencana (m/s). Default-nya dari master design standard "
+            "(Old JIL: 60) dan boleh diubah user per request."
+        )
+    )
+    air_density_kg_m3: PositiveFloat = Field(
+        description=(
+            "Massa jenis udara (kg/m³). Default-nya dari master design standard "
+            "(Old JIL: 1.23) dan boleh diubah user per request."
+        )
+    )
     include_oblique_wind: bool = Field(
         default=False,
         description="true = hitung juga angin miring 45° (OBLIQUE) selain angin lurus 90° (STRAIGHT).",

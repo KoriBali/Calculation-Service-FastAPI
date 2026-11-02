@@ -22,6 +22,9 @@ tiang di setiap elevasi dalam `evaluated_positions_m`, dan cek lentur tiap arm.
 ### Aturan penting
 - `design_standard` saat ini hanya `3`. Design standard 3 tidak menghitung
   seismic, jadi tidak ada field `seismic`.
+- `wind_speed_m_s` dan `air_density_kg_m3` wajib. Calculation Service tidak
+  memegang default: kirim default master design standard, atau nilai yang
+  diubah user.
 - Tinggi struktur tidak dikirim: dipakai puncak segmen tertinggi.
 - Key wajib **snake_case**. Key yang tidak dikenal ditolak dengan 422.
 - `name` harus unik di dalam `poles`, `direct_objects`, `overhead_wires`, `arms`,
@@ -32,7 +35,7 @@ tiang di setiap elevasi dalam `evaluated_positions_m`, dan cek lentur tiap arm.
 Envelope `{"success": true, "data": {...}}`. Semua nilai sudah dibulatkan engine
 (aturan rounding design standard). Key mencantumkan satuan (`_m`, `_n`, `_nm`,
 `_n_mm2`, ...). Isi `data`:
-- `schema_version`: `"2.0"`. Simpan bersama hasil.
+- `schema_version`: `"2.1"`. Simpan bersama hasil.
 - `summary.status`: `"OK"` atau `"NG"`, dari seluruh `checks` (tiang dan arm).
   `summary.governing`: check dengan `utilization_ratio` terbesar.
 - `conditions`: wind speed, air density, wind pressure, gravity, dan `wind_cases`
@@ -104,6 +107,8 @@ REQUEST_EXAMPLES = {
         "description": "Straight + Taper, satu arm dengan satu objek Omni, satu overhead wire, cek di dasar tiang.",
         "value": {
             "design_standard": 3,
+            "wind_speed_m_s": 60,
+            "air_density_kg_m3": 1.23,
             "poles": _CASE_3_POLES,
             "overhead_wires": [
                 {
@@ -146,6 +151,8 @@ REQUEST_EXAMPLES = {
         "description": "Tiga segmen, satu objek Directional, `include_oblique_wind` = true, tiga posisi cek.",
         "value": {
             "design_standard": 3,
+            "wind_speed_m_s": 60,
+            "air_density_kg_m3": 1.23,
             "include_oblique_wind": True,
             "poles": _STEPPED_POLES,
             "direct_objects": [
@@ -169,6 +176,8 @@ REQUEST_EXAMPLES = {
         "description": "Field opsional dihilangkan: tanpa objek, kabel, atau arm.",
         "value": {
             "design_standard": 3,
+            "wind_speed_m_s": 60,
+            "air_density_kg_m3": 1.23,
             "poles": [
                 {
                     "name": "Pole",

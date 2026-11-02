@@ -1,4 +1,4 @@
-"""POST /api/pole/calculate (design standard 3, schema 2.0): contract and validation."""
+"""POST /api/pole/calculate (design standard 3, schema 2.1): contract and validation."""
 
 import copy
 
@@ -44,7 +44,7 @@ def all_checks(data: dict) -> list[dict]:
 @pytest.mark.parametrize("name", REQUEST_EXAMPLES)
 def test_every_openapi_example_returns_200(client, name):
     data = calculate(client, example(name))
-    assert data["schema_version"] == "2.0"
+    assert data["schema_version"] == "2.1"
     assert data["design_standard"] == {"code": 3, "name": "Old Lighting Pole"}
 
 
@@ -98,6 +98,29 @@ def test_case_3_matches_python_calc_report_values(client):
             "utilization_ratio": 0.663,
         },
     }
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ({"wind_speed_m_s": 50}, (50.0, 1.23, 1538.0)),
+        ({"air_density_kg_m3": 1.2}, (60.0, 1.2, 2160.0)),
+    ],
+    ids=["wind-speed", "air-density"],
+)
+def test_wind_speed_and_air_density_come_from_the_request(client, change, expected):
+    """The gateway sends the master default or the user's value; the engine must use it."""
+    request = example("arm_and_overhead_wire")
+    default = calculate(client, request)
+    request.update(change)
+    data = calculate(client, request)
+    conditions = data["conditions"]
+    assert (
+        conditions["wind_speed_m_s"],
+        conditions["air_density_kg_m3"],
+        conditions["wind_pressure_n_m2"],
+    ) == expected
+    assert data["arms"][0]["totals"]["wind_moment_nm"] != default["arms"][0]["totals"]["wind_moment_nm"]
 
 
 def test_oblique_wind_adds_a_case_everywhere(client):
@@ -171,12 +194,17 @@ def test_omni_objects_ignore_side_area_and_angle(client):
         (lambda r: r["arms"][0]["objects"][0].update(object_type="Directional"), "arms.0.objects.0"),
         (lambda r: r["arms"][0]["objects"][0].update(object_type="ArmBody"), "arms.0.objects.0.object_type"),
         (lambda r: r["overhead_wires"][0].pop("span_length_m"), "overhead_wires.0.span_length_m"),
+        (lambda r: r.pop("wind_speed_m_s"), "wind_speed_m_s"),
+        (lambda r: r.pop("air_density_kg_m3"), "air_density_kg_m3"),
+        (lambda r: r.update(wind_speed_m_s=0), "wind_speed_m_s"),
+        (lambda r: r.update(air_density_kg_m3=-1.23), "air_density_kg_m3"),
     ],
     ids=[
         "other-standard", "seismic-not-allowed", "old-wind-object", "taper-without-upper",
         "missing-lower", "unknown-material", "old-straight-field", "no-poles", "no-positions",
         "zero-overdesign", "directional-arm-object-without-side", "arm-body-is-generated",
-        "wire-without-span",
+        "wire-without-span", "no-wind-speed", "no-air-density", "zero-wind-speed",
+        "negative-air-density",
     ],
 )
 def test_schema_errors_return_422_with_field(client, change, field):

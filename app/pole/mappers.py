@@ -1,4 +1,4 @@
-"""Design standard 3 engine results -> response ``data`` (schema 2.0).
+"""Design standard 3 engine results -> response ``data`` (schema 2.1).
 
 The engine already rounds every value (rounding profile of the design
 standard). This module only selects and arranges values; the few values it
@@ -18,7 +18,7 @@ from app.engine.domain.arm import ArmPart
 from app.engine.domain.standards import DesignStandard
 from app.pole.schemas import PoleCalculationRequest
 
-SCHEMA_VERSION = "2.0"
+SCHEMA_VERSION = "2.1"
 
 OK = "OK"
 NG = "NG"

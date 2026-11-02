@@ -21,6 +21,8 @@ def calculate_pole(request: PoleCalculationRequest) -> dict:
             request.design_standard,
             # Confirmed rule: the structure height is the top of the highest pole.
             structure_height_m=max(pole.top_elevation_m for pole in request.poles),
+            basic_wind_speed_m_s=request.wind_speed_m_s,
+            air_density_kg_m3=request.air_density_kg_m3,
             include_oblique=request.include_oblique_wind,
         )
         wires = tuple(to_overhead_wire(wire) for wire in request.overhead_wires)
