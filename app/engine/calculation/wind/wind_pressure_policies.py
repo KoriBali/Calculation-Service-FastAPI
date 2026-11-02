@@ -223,8 +223,14 @@ def wind_pressure_policy_for(
     structure_height_m: float,
     area_density_code: int | None = None,
     basic_wind_speed_m_s: float | None = None,
+    air_density_kg_m3: float | None = None,
 ) -> WindPressurePolicy:
-    """Create the confirmed pressure policy for a design standard."""
+    """Create the confirmed pressure policy for a design standard.
+
+    Wind speed and air density are inputs only for the standards in
+    ``input_enabled_standards``; the others keep their fixed values. Act
+    standards (1, 6) derive density from the area density code instead.
+    """
     standard = DesignStandardCode(design_standard)
     structure_height_m = float(structure_height_m)
     if structure_height_m <= 0:
@@ -272,8 +278,12 @@ def wind_pressure_policy_for(
         DesignStandardCode.OLD_TRAFFIC_SIGNAL,
     }
     wind_speed = default_wind_speed_by_standard[standard]
-    if standard in input_enabled_standards and basic_wind_speed_m_s is not None:
-        wind_speed = basic_wind_speed_m_s
+    air_density = FixedWindPressurePolicy.air_density_kg_m3
+    if standard in input_enabled_standards:
+        if basic_wind_speed_m_s is not None:
+            wind_speed = basic_wind_speed_m_s
+        if air_density_kg_m3 is not None:
+            air_density = air_density_kg_m3
 
     decimal_places_by_standard = {
         DesignStandardCode.FIXED_WIND_DISASTER: 4,
@@ -285,5 +295,6 @@ def wind_pressure_policy_for(
     }
     return FixedWindPressurePolicy(
         wind_speed_m_s=wind_speed,
+        air_density_kg_m3=air_density,
         calculation_decimal_places=decimal_places_by_standard[standard],
     )

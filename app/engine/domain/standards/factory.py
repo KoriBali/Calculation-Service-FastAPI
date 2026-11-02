@@ -67,6 +67,7 @@ class DesignStandardFactory:
         structure_height_m: float | None = None,
         area_density_code: int | None = None,
         basic_wind_speed_m_s: float | None = None,
+        air_density_kg_m3: float | None = None,
         k_value: float | None = None,
         eqa_m_s2: float = 4.71,
         eqr: float = 1.0,
@@ -94,6 +95,7 @@ class DesignStandardFactory:
                 structure_height_m=structure_height_m,
                 area_density_code=area_density_code,
                 basic_wind_speed_m_s=basic_wind_speed_m_s,
+                air_density_kg_m3=air_density_kg_m3,
             ),
             wind_case_policy=wind_case_policy_for(
                 standard,

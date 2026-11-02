@@ -178,6 +178,11 @@ class DesignStandardFactoryTests(unittest.TestCase):
 
         self.assertEqual(standard.wind_pressure_policy.wind_speed_m_s, 55.0)
 
+    def test_configurable_air_density_reaches_pressure_policy(self):
+        standard = create_standard(3, air_density_kg_m3=1.2)
+
+        self.assertEqual(standard.wind_pressure_policy.air_density_kg_m3, 1.2)
+
 
 if __name__ == "__main__":
     unittest.main()

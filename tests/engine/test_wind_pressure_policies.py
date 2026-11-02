@@ -123,6 +123,28 @@ class WindPressurePolicyTests(unittest.TestCase):
         self.assertEqual(policy.wind_speed_m_s, 60.0)
         self.assertEqual(policy.wind_pressure_at(10), 2214.0)
 
+    def test_configurable_standards_use_input_air_density(self):
+        for standard in (3, 4, 5, 7, 9):
+            with self.subTest(standard=standard):
+                policy = wind_pressure_policy_for(
+                    standard,
+                    structure_height_m=10,
+                    basic_wind_speed_m_s=60,
+                    air_density_kg_m3=1.2,
+                )
+                self.assertEqual(policy.air_density_kg_m3, 1.2)
+                self.assertEqual(policy.wind_pressure_at(10), 2160.0)
+
+    def test_standard_two_keeps_fixed_air_density(self):
+        policy = wind_pressure_policy_for(
+            2,
+            structure_height_m=10,
+            air_density_kg_m3=1.2,
+        )
+
+        self.assertEqual(policy.air_density_kg_m3, 1.23)
+        self.assertEqual(policy.wind_pressure_at(10), 2214.0)
+
     def test_configurable_standards_use_defaults_when_input_is_absent(self):
         expected_speed = {3: 60.0, 4: 40.0, 5: 50.0, 7: 60.0, 9: 60.0}
 
@@ -133,6 +155,7 @@ class WindPressurePolicyTests(unittest.TestCase):
                     structure_height_m=10,
                 )
                 self.assertEqual(policy.wind_speed_m_s, wind_speed)
+                self.assertEqual(policy.air_density_kg_m3, 1.23)
 
     def test_tower_pressure_uses_kz_factor_and_minimum(self):
         minimum_policy = ActTowerWindPressurePolicy(40, 2, 1)
