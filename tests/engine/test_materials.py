@@ -1,11 +1,11 @@
 """Tests for pole material domain objects.
 
-Ported from python_calc ``tests/test_materials.py``.
+Ported from python_calc ``tests/test_materials.py`` (commit 270d23b).
 """
 
 import unittest
 
-from app.engine.materials import get_pole_material
+from app.engine.domain.materials import get_pole_material
 
 
 class PoleMaterialTests(unittest.TestCase):
