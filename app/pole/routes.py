@@ -17,7 +17,12 @@ pole_router = APIRouter(prefix="/api/pole", tags=["pole"])
     description=DESCRIPTION,
     responses=RESPONSES,
 )
-def calculate(data: Annotated[PoleCalculationRequest, Body(openapi_examples=REQUEST_EXAMPLES)]):
+def calculate(
+    data: Annotated[
+        PoleCalculationRequest,
+        Body(discriminator="design_standard", openapi_examples=REQUEST_EXAMPLES),
+    ],
+):
     # FastAPI validates the body before this runs. A body that is not a JSON
     # object becomes 400; ValidationError and CalculationInputError become 422
     # in app/shared/errors.py.

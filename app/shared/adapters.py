@@ -64,8 +64,10 @@ def to_overhead_wire(wire: OverheadWireInput) -> OverheadWire:
 
 
 def _to_arm_load_object(item: ArmObjectInput) -> ArmLoadObject:
-    # Omni uses the front area for every direction; side area is not read.
-    side_area = 0.0 if item.object_type == "Omni" else item.side_area_m2
+    # Omni wind load uses the front area for every direction, but the engine
+    # (python_calc, as VBA) still reads the side area for the arm torque of
+    # d_st 7. It is passed on as sent; a missing one is 0.
+    side_area = item.side_area_m2 or 0.0
     return ArmLoadObject(
         name=item.name,
         object_type=item.object_type,

@@ -1,4 +1,4 @@
-"""POST /api/pole/calculate (design standard 3, schema 2.2): contract and validation."""
+"""POST /api/pole/calculate (design standard 3 and 7, schema 2.2): contract and validation."""
 
 import copy
 
@@ -40,12 +40,23 @@ def all_checks(data: dict) -> list[dict]:
     ]
 
 
+STANDARD_NAMES = {3: "Old Lighting Pole", 7: "New JIL"}
+NEW_JIL_CASES = ["N", "S", "E", "W", "NE", "SW", "NW", "SE"]
+NEW_JIL_POLE_CHECKS = [
+    "pole_fix_load_bending",
+    "pole_wind_bending", "pole_wind_torsion", "pole_wind_combined",
+    "pole_seismic_bending", "pole_seismic_torsion", "pole_seismic_combined",
+]
+
+
 # ===== Contract =====
 @pytest.mark.parametrize("name", REQUEST_EXAMPLES)
 def test_every_openapi_example_returns_200(client, name):
-    data = calculate(client, example(name))
+    body = example(name)
+    data = calculate(client, body)
+    code = body["design_standard"]
     assert data["schema_version"] == "2.2"
-    assert data["design_standard"] == {"code": 3, "name": "Old Lighting Pole"}
+    assert data["design_standard"] == {"code": code, "name": STANDARD_NAMES[code]}
 
 
 @pytest.mark.parametrize("name", REQUEST_EXAMPLES)
@@ -191,6 +202,107 @@ def test_every_step_pole_has_a_section_at_its_lower_end(client):
     }
 
 
+# ===== Design standard 7 (New JIL) =====
+def test_new_jil_matches_python_calc_values(client):
+    """LA10B, the same values python_calc_V2 manual_check_taper_pole_l_dst7.py prints."""
+    data = calculate(client, example("new_jil_arm"))
+    conditions = data["conditions"]
+    assert conditions["gravity_m_s2"] == 9.81
+    assert conditions["wind_pressure_n_m2"] == 2214.0
+    assert [case["code"] for case in conditions["wind_cases"]] == NEW_JIL_CASES
+    assert conditions["seismic"] == {"horizontal_acceleration_m_s2": 4.71, "response_ratio": 1.0}
+
+    arm = data["arms"][0]
+    assert [check["check"] for check in arm["checks"]] == [
+        "arm_fix_load_bending", "arm_wind_bending", "arm_seismic_bending",
+    ]
+    assert [check["utilization_ratio"] for check in arm["checks"]] == [0.0181, 0.0229, 0.0133]
+    assert arm["totals"] == {
+        "fix_load_n": 146.0, "fix_load_moment_nm": 25.5, "wind_moment_nm": 41.3,
+        "seismic_load_n": 70.4, "seismic_moment_nm": 12.3,
+    }
+    lamp = arm["objects"][1]
+    assert (lamp["front_wind_load_n"], lamp["side_wind_load_n"], lamp["seismic_load_n"]) == (221.0, 221.0, 65.9)
+
+    base = next(p for p in data["evaluated_positions"] if p["evaluated_position_m"] == 0.0)
+    assert base["section"] == {
+        "material": "STK400", "diameter_mm": 175.0, "thickness_mm": 4.0, "section_modulus_cm3": 89.8,
+        "moment_of_inertia_cm4": 786.0, "polar_moment_of_inertia_cm4": 1572.0,
+    }
+    assert (base["vertical_fix_load_n"], base["seismic_load_n"], base["seismic_moment_nm"]) == (1290.0, 616.0, 2950.0)
+    cases = {case["code"]: case for case in base["wind_cases"]}
+    assert list(cases) == NEW_JIL_CASES
+    north, north_east = cases["N"], cases["NE"]
+    assert north["totals"]["combined_moment_nm"] == 10200.0
+    assert north["totals"]["fix_load_moment_nm"] == 25.5
+    assert north["totals"]["combined_seismic_moment_nm"] == 2950.0
+    assert (north["totals"]["wind_torsional_moment_nm"], north_east["totals"]["wind_torsional_moment_nm"]) == (-41.3, -40.6)
+    checks = {check["check"]: check for check in north["checks"]}
+    assert list(checks) == NEW_JIL_POLE_CHECKS
+    assert (checks["pole_wind_bending"]["stress_n_mm2"], checks["pole_wind_bending"]["utilization_ratio"]) == (114.0, 0.485)
+    assert checks["pole_wind_torsion"]["allowable_stress_n_mm2"] == 136  # STK400 short-term shear
+    assert checks["pole_fix_load_bending"]["allowable_stress_n_mm2"] == 156
+    assert "maximum_shear_stress_n_mm2" in checks["pole_wind_combined"]
+    arm_row = north["load_rows"][0]
+    assert (arm_row["kind"], arm_row["wind_torque_nm"], arm_row["seismic_torque_nm"]) == ("ARM", -41.3, -12.3)
+    assert {row["kind"]: row["wind_torque_nm"] for row in north["load_rows"]}["POLE"] is None
+
+    assert data["summary"] == {
+        "status": "OK",
+        "governing": {
+            "component": "pole",
+            "name": "Pole-3",
+            "evaluated_position_m": 0.0,
+            "wind_case": "N",
+            "check": "pole_wind_bending",
+            "utilization_ratio": 0.485,
+        },
+    }
+
+
+def test_new_jil_every_position_has_eight_cases_and_seven_checks(client):
+    data = calculate(client, example("new_jil_wire_and_seismic"))
+    for position in data["evaluated_positions"]:
+        assert [case["code"] for case in position["wind_cases"]] == NEW_JIL_CASES
+        for case in position["wind_cases"]:
+            assert [check["check"] for check in case["checks"]] == NEW_JIL_POLE_CHECKS
+            assert all("seismic_load_n" in row for row in case["load_rows"])
+    (wire,) = data["overhead_wires"]
+    assert wire["seismic_tension_n"] > 0
+
+
+def test_new_jil_seismic_inputs_default_and_come_from_the_request(client):
+    """Left out -> the engine default; sent -> the engine uses the request's value."""
+    default = calculate(client, example("new_jil_arm"))
+    explicit = example("new_jil_arm")
+    explicit.update(horizontal_acceleration_m_s2=4.71, response_ratio=1.0)
+    assert calculate(client, explicit) == default
+
+    changed = example("new_jil_arm")
+    changed.update(horizontal_acceleration_m_s2=5.0, response_ratio=1.2)
+    data = calculate(client, changed)
+    assert data["conditions"]["seismic"] == {"horizontal_acceleration_m_s2": 5.0, "response_ratio": 1.2}
+    seismic = data["arms"][0]["totals"]["seismic_load_n"]
+    assert seismic > default["arms"][0]["totals"]["seismic_load_n"]
+    assert data["evaluated_positions"][1]["seismic_load_n"] > default["evaluated_positions"][1]["seismic_load_n"]
+
+
+def test_omni_arm_side_area_drives_new_jil_torque(client):
+    """As VBA/python_calc: Omni wind load uses the front area, torque also the side area."""
+    without_side = example("new_jil_arm")
+    del without_side["arms"][0]["objects"][0]["side_area_m2"]
+    with_side = calculate(client, example("new_jil_arm"))
+    plain = calculate(client, without_side)
+
+    def torque(data, code):
+        case = next(c for c in data["evaluated_positions"][1]["wind_cases"] if c["code"] == code)
+        return case["totals"]["wind_torsional_moment_nm"]
+
+    assert (torque(with_side, "NE"), torque(plain, "NE")) == (-40.6, -20.7)
+    assert torque(with_side, "N") == torque(plain, "N")
+    assert plain["arms"][0]["objects"][1]["side_wind_load_n"] == 0.0
+
+
 # ===== Upper/lower and Omni: ignored values do not change any result =====
 def test_straight_pole_ignores_upper_values(client):
     plain = example("direct_object_oblique")
@@ -202,6 +314,7 @@ def test_straight_pole_ignores_upper_values(client):
 
 
 def test_omni_objects_ignore_side_area_and_angle(client):
+    """Design standard 3 has no torque, so an Omni side area changes no value."""
     plain = example("arm_and_overhead_wire")
     plain["direct_objects"] = [{
         "name": "Lamp", "object_type": "Omni", "front_area_m2": 0.2,
@@ -252,6 +365,35 @@ def test_schema_errors_return_422_with_field(client, change, field):
     assert field in error_fields(response)
 
 
+@pytest.mark.parametrize(
+    ("name", "change", "field"),
+    [
+        ("arm_and_overhead_wire", lambda r: r.pop("design_standard"), "design_standard"),
+        ("arm_and_overhead_wire", lambda r: r.update(design_standard="3"), "design_standard"),
+        ("arm_and_overhead_wire", lambda r: r.update(horizontal_acceleration_m_s2=4.71), "horizontal_acceleration_m_s2"),
+        ("arm_and_overhead_wire", lambda r: r.update(response_ratio=1.0), "response_ratio"),
+        ("new_jil_arm", lambda r: r.update(include_oblique_wind=True), "include_oblique_wind"),
+        ("new_jil_arm", lambda r: r.update(horizontal_acceleration_m_s2=0), "horizontal_acceleration_m_s2"),
+        ("new_jil_arm", lambda r: r.update(response_ratio=-1), "response_ratio"),
+        ("new_jil_arm", lambda r: r.pop("wind_speed_m_s"), "wind_speed_m_s"),
+        ("new_jil_arm", lambda r: r["poles"][1].pop("diameter_upper_mm"), "poles.1"),
+        ("new_jil_arm", lambda r: r["arms"][0]["objects"][0].update(object_type="Directional", side_area_m2=None), "arms.0.objects.0"),
+    ],
+    ids=[
+        "no-standard", "standard-as-string", "seismic-on-standard-3", "response-ratio-on-standard-3",
+        "oblique-on-standard-7", "zero-acceleration", "negative-response-ratio",
+        "standard-7-no-wind-speed", "standard-7-taper-without-upper", "standard-7-directional-arm-object",
+    ],
+)
+def test_field_path_has_no_design_standard_tag(client, name, change, field):
+    """The body is a union on design_standard; error paths stay the plain field path."""
+    request = example(name)
+    change(request)
+    response = client.post(URL, json=request)
+    assert response.status_code == 422
+    assert field in error_fields(response)
+
+
 def test_directional_direct_object_needs_side_area_and_angle(client):
     request = example("direct_object_oblique")
     del request["direct_objects"][0]["fixed_angle_deg"]
@@ -298,10 +440,20 @@ def test_engine_rule_error_returns_422_with_message(client, change, message):
     assert message in response.json()["message"]
 
 
-def test_camel_case_body_is_rejected(client):
-    """The contract is snake_case only; camelCase is converted by the gateway."""
+@pytest.mark.parametrize(
+    ("standard_key", "field"),
+    [("designStandard", "design_standard"), ("design_standard", "evaluatedPositionsM")],
+    ids=["camel-standard", "camel-fields"],
+)
+def test_camel_case_body_is_rejected(client, standard_key, field):
+    """The contract is snake_case only; camelCase is converted by the gateway.
+
+    The body is a union on design_standard: without that snake_case key the
+    standard is unknown, so only design_standard is reported.
+    """
     body = {
-        "designStandard": 3,
+        standard_key: 3,
+        "windSpeedMS": 60,
         "poles": [{
             "name": "P", "poleType": "Straight", "diameterLowerMm": 139.8,
             "thicknessLowerMm": 4.5, "material": "STK400", "topElevationM": 8.0,
@@ -310,7 +462,7 @@ def test_camel_case_body_is_rejected(client):
     }
     response = client.post(URL, json=body)
     assert response.status_code == 422
-    assert "evaluatedPositionsM" in error_fields(response)
+    assert field in error_fields(response)
 
 
 @pytest.mark.parametrize(

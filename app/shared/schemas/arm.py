@@ -9,7 +9,7 @@ from app.shared.schemas.pole import Material, Name
 
 
 class ArmObjectInput(ApiModel):
-    """Side area exists only for Directional; Omni ignores it."""
+    """Side area is required for Directional; for Omni it is optional and only feeds torque."""
 
     name: Name = Field(description="Nama objek, harus unik di dalam objects satu arm.")
     object_type: Literal["Omni", "Directional"] = Field(
@@ -21,7 +21,11 @@ class ArmObjectInput(ApiModel):
     front_area_m2: NonNegativeFloat = Field(description="Luas proyeksi depan per unit (m²).")
     side_area_m2: NonNegativeFloat | None = Field(
         default=None,
-        description="Luas proyeksi samping per unit (m²). Wajib untuk Directional, diabaikan untuk Omni.",
+        description=(
+            "Luas proyeksi samping per unit (m²). Wajib untuk Directional. Untuk Omni "
+            "opsional: beban angin Omni tetap memakai front_area_m2, tetapi side area "
+            "dipakai torque arm di design standard 7 (sama dengan VBA)."
+        ),
     )
     mass_per_unit_kg: NonNegativeFloat = Field(description="Massa per unit (kg).")
     horizontal_load_distance_m: NonNegativeFloat = Field(
