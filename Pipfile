@@ -4,12 +4,12 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-fastapi = "*"
 uvicorn = {extras = ["standard"], version = "*"}
 uvicorn-worker = "*"
 gunicorn = "==25.3.0"
 pydantic = "==2.13.3"
 python-dotenv = "==1.2.2"
+fastapi = {extras = ["standard"], version = "==0.146.0"}
 
 [dev-packages]
 pytest = "==9.0.3"
