@@ -219,7 +219,7 @@ def test_new_jil_matches_python_calc_values(client):
     assert [check["utilization_ratio"] for check in arm["checks"]] == [0.0181, 0.0229, 0.0133]
     assert arm["totals"] == {
         "fix_load_n": 146.0, "fix_load_moment_nm": 25.5, "wind_moment_nm": 41.3,
-        "seismic_load_n": 70.4, "seismic_moment_nm": 12.3,
+        "front_wind_load_n": 238.0, "seismic_load_n": 70.4, "seismic_moment_nm": 12.3,
     }
     lamp = arm["objects"][1]
     assert (lamp["front_wind_load_n"], lamp["side_wind_load_n"], lamp["seismic_load_n"]) == (221.0, 221.0, 65.9)
@@ -301,6 +301,145 @@ def test_omni_arm_side_area_drives_new_jil_torque(client):
     assert (torque(with_side, "NE"), torque(plain, "NE")) == (-40.6, -20.7)
     assert torque(with_side, "N") == torque(plain, "N")
     assert plain["arms"][0]["objects"][1]["side_wind_load_n"] == 0.0
+
+
+# ===== Design standard 7: values for the New JIL report =====
+def _arm_body(name, diameter, thickness, length, height, angle, obj):
+    return {
+        "name": name, "material": "STK400", "diameter_mm": diameter, "thickness_mm": thickness,
+        "total_length_m": length, "exposed_length_m": length, "installation_height_m": height,
+        "fixed_angle_deg": angle, "objects": [obj],
+    }
+
+
+def _signal(name, front, side, mass, distance, coefficient):
+    return {
+        "name": name, "object_type": "Directional", "front_area_m2": front, "side_area_m2": side,
+        "mass_per_unit_kg": mass, "horizontal_load_distance_m": distance,
+        "base_wind_coefficient": coefficient, "quantity": 1,
+    }
+
+
+# Reference case of the New JIL VBA workbook (Summary Report No.9999).
+VBA_REFERENCE = {
+    "design_standard": 7,
+    "wind_speed_m_s": 60.0,
+    "air_density_kg_m3": 1.23,
+    "horizontal_acceleration_m_s2": 4.71,
+    "response_ratio": 1.0,
+    "base_elevation_m": 0.0,
+    "poles": [
+        {"name": "Pole-1", "pole_type": "Taper", "material": "STK400", "top_elevation_m": 10.0,
+         "diameter_lower_mm": 197, "diameter_upper_mm": 75, "thickness_lower_mm": 4, "thickness_upper_mm": 4},
+        {"name": "Pole-2", "pole_type": "Taper", "material": "STK400", "top_elevation_m": 6.5,
+         "diameter_lower_mm": 282, "diameter_upper_mm": 197, "thickness_lower_mm": 7, "thickness_upper_mm": 7},
+    ],
+    "direct_objects": [
+        {"name": "Lamp", "object_type": "Directional", "front_area_m2": 0.15, "side_area_m2": 0.1,
+         "fixed_angle_deg": 0.0, "mass_per_unit_kg": 14.0, "elevation_m": 10.0,
+         "base_wind_coefficient": 1.0, "quantity": 1},
+    ],
+    "overhead_wires": [],
+    "arms": [
+        _arm_body("Arm-1", 101.6, 4.2, 4.0, 6.15, 45.0, _signal("Sensor", 0.02, 0.02, 3.98, 3.8, 1.2)),
+        _arm_body("Arm-2", 139.8, 4.5, 3.25, 5.85, 0.0, _signal("Signal", 0.525, 0.203, 20.4, 2.625, 1.3)),
+        _arm_body("Arm-3", 76.3, 3.2, 1.17, 4.2, 180.0, _signal("Walk-1", 0.266, 0.14, 10.2, 1.0, 1.3)),
+        _arm_body("Arm-4", 76.3, 3.2, 1.17, 4.2, 270.0, _signal("Walk-2", 0.266, 0.14, 10.2, 1.0, 1.3)),
+    ],
+    "evaluated_positions_m": [6.5, 0.0],
+}
+
+
+def test_new_jil_report_values_match_vba_reference(client):
+    """The Summary Report values of the VBA reference case, in N, N·m, m and cm."""
+    data = calculate(client, copy.deepcopy(VBA_REFERENCE))
+
+    pole_1, pole_2 = data["pole_sections"]
+    keys = ("section_modulus_cm3", "length_m", "mass_kg", "fix_load_n",
+            "fix_load_per_meter_n_m", "projected_area_m2")
+    assert [pole_1[key] for key in keys] == [115.0, 3.5, 45.6, 447.0, 128.0, 0.476]
+    assert [pole_2[key] for key in keys] == [406.0, 6.5, 261.0, 2560.0, 393.0, 1.56]
+
+    assert [arm["specification"]["fix_load_per_meter_n_m"] for arm in data["arms"]] == [99.1, 147.0, 56.6, 56.6]
+    assert [arm["totals"]["front_wind_load_n"] for arm in data["arms"]] == [682.0, 2210.0, 904.0, 904.0]
+    assert [item["mass_kg"] for item in data["arms"][1]["objects"]] == [48.8, 20.4]
+    assert data["direct_objects"] == [
+        {"name": "Lamp", "quantity": 1, "mass_kg": 14.0, "front_wind_load_n": 332.0, "side_wind_load_n": 221.0},
+    ]
+
+    base = next(p for p in data["evaluated_positions"] if p["evaluated_position_m"] == 0.0)
+    assert base["component_totals"] == {
+        "pole": {"fix_load_n": 3010.0, "seismic_load_n": 1440.0, "seismic_moment_nm": 5480.0},
+        "direct_object": {"fix_load_n": 137.0, "seismic_load_n": 65.9, "seismic_moment_nm": 659.0},
+        # VBA prints 694: it rounds each arm before adding.
+        "arm": {"fix_load_n": 1450.0, "seismic_load_n": 695.0, "seismic_moment_nm": 3870.0},
+        "overhead_wire": {"fix_load_n": 0.0, "seismic_load_n": 0.0, "seismic_moment_nm": 0.0},
+    }
+    assert (base["seismic_tension_n"], base["resultant_seismic_load_n"]) == (0.0, 2200.0)
+
+    cases = {case["code"]: case for case in base["wind_cases"]}
+    # The direction VBA reports for each group: S, W and NW.
+    expected = {
+        "S": ((0.0, -7530.0), (0.0, -7530.0), (-38200.0, 0.0), 38200.0,
+              {"pole": [3160.0, 13300.0], "direct_object": [332.0, 3320.0], "arm": [4040.0, 21600.0]}),
+        "W": ((5790.0, 0.0), (5790.0, 0.0), (0.0, 27600.0), 27600.0,
+              {"pole": [3160.0, 13300.0], "direct_object": [221.0, 2210.0], "arm": [2410.0, 12100.0]}),
+        # VBA prints 391 / 3910 for the lamp: it rounds cos 45 degrees first.
+        "NW": ((5700.0, 5700.0), (5700.0, 5700.0), (28900.0, 28900.0), 40700.0,
+               {"pole": [3160.0, 13300.0], "direct_object": [392.0, 3920.0], "arm": [4510.0, 23500.0]}),
+    }
+    for code, (load, resultant, moment, moment_total, components) in expected.items():
+        totals = cases[code]["totals"]
+        assert (totals["wind_load_x_n"], totals["wind_load_y_n"]) == load
+        assert (totals["resultant_horizontal_load_x_n"], totals["resultant_horizontal_load_y_n"]) == resultant
+        assert (totals["wind_moment_x_nm"], totals["wind_moment_y_nm"]) == moment
+        assert totals["wind_moment_nm"] == moment_total
+        assert (totals["wind_tension_x_n"], totals["wind_tension_y_n"]) == (0.0, 0.0)
+        assert (totals["wind_tension_moment_x_nm"], totals["wind_tension_moment_y_nm"]) == (0.0, 0.0)
+        actual = cases[code]["component_totals"]
+        assert {name: [item["wind_load_n"], item["wind_moment_nm"]] for name, item in actual.items()} == {
+            **components, "overhead_wire": [0.0, 0.0],
+        }
+
+
+def test_new_jil_omni_direct_object_takes_the_front_load_on_every_side(client):
+    body = copy.deepcopy(VBA_REFERENCE)
+    lamp = body["direct_objects"][0]
+    lamp["object_type"] = "Omni"
+    del lamp["side_area_m2"], lamp["fixed_angle_deg"]
+    (item,) = calculate(client, body)["direct_objects"]
+    assert (item["front_wind_load_n"], item["side_wind_load_n"]) == (332.0, 332.0)
+
+
+def test_new_jil_wire_report_values(client):
+    data = calculate(client, example("new_jil_wire_and_seismic"))
+    (wire,) = data["overhead_wires"]
+    cases = {case["code"]: case for case in wire["wind_cases"]}
+    # The wire runs along 0 degrees: wind from N is straight to it, from NE oblique.
+    assert wire["straight_wind"] == {
+        "combined_wind_line_load_n_m": cases["N"]["combined_wind_line_load_n_m"],
+        "wind_tension_n": cases["N"]["wind_tension_n"],
+    }
+    assert wire["oblique_wind"] == {
+        "combined_wind_line_load_n_m": cases["NE"]["combined_wind_line_load_n_m"],
+        "wind_tension_n": cases["NE"]["wind_tension_n"],
+    }
+    assert (wire["mass_kg"], wire["front_wind_load_n"]) == (0.95, 127.0)
+    base = next(p for p in data["evaluated_positions"] if p["evaluated_position_m"] == 0.0)
+    # 775 + 77.5 = 852.5, rounded half to even as VBA Fkb_SF.
+    assert (base["seismic_load_n"], base["seismic_tension_n"], base["resultant_seismic_load_n"]) == (775.0, 77.5, 852.0)
+
+
+@pytest.mark.parametrize("name", ["arm_and_overhead_wire", "direct_object_oblique", "pole_only"])
+def test_report_values_are_new_jil_only(client, name):
+    data = calculate(client, example(name))
+    assert "direct_objects" not in data
+    assert all("length_m" not in pole for pole in data["pole_sections"])
+    assert all("front_wind_load_n" not in arm["totals"] for arm in data["arms"])
+    assert all("straight_wind" not in wire for wire in data["overhead_wires"])
+    for position in data["evaluated_positions"]:
+        assert "component_totals" not in position
+        assert all("component_totals" not in case for case in position["wind_cases"])
 
 
 # ===== Upper/lower and Omni: ignored values do not change any result =====

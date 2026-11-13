@@ -70,6 +70,27 @@ Envelope `{"success": true, "data": {...}}`. Semua nilai sudah dibulatkan engine
 - Check `*_torsion` memakai `moment_nm` = moment torsi dan allowable = shear
   jangka pendek. Check `*_combined` memakai `stress_n_mm2` = tegangan gabungan
   maksimum dan menambah `maximum_shear_stress_n_mm2`.
+
+### Tambahan d_st 7 untuk laporan New JIL
+Hanya design standard 7. Nilai komponen yang dihitung engine, dan beberapa nilai
+turunan ringan dengan rounding yang sama:
+- `pole_sections[]`: `section_modulus_cm3`, `length_m`, `mass_kg`, `fix_load_n`,
+  `projected_area_m2` (seluruh step pole), dan `fix_load_per_meter_n_m` (massa per
+  meter pada ukuran rata-rata lower dan upper, dikali gravitasi).
+- `direct_objects[]` (baru): per objek, `quantity`, `mass_kg`, `front_wind_load_n`,
+  `side_wind_load_n` (tidak bergantung arah angin).
+- `arms[]`: `specification.fix_load_per_meter_n_m`, `objects[].mass_kg`,
+  `totals.front_wind_load_n` (badan dan objek, masing-masing di sisi depan).
+- `overhead_wires[]`: `mass_kg`, `front_wind_load_n`, dan `straight_wind` /
+  `oblique_wind` (line load gabungan dan tension saat angin 90° dan 45° terhadap
+  kabel).
+- `evaluated_positions[]`: `seismic_tension_n`, `resultant_seismic_load_n`
+  (seismic load + tension seismic), dan `component_totals` (fix load, seismic load,
+  seismic moment per `pole`, `direct_object`, `arm`, `overhead_wire`).
+- `wind_cases[].totals`: komponen X/Y `wind_load_*`, `wind_tension_*`,
+  `resultant_horizontal_load_*`, `wind_tension_moment_*`, dan moment angin saja
+  `wind_moment_nm` / `_x_nm` / `_y_nm` (tanpa fix load dan tension).
+  `wind_cases[].component_totals`: wind load dan wind moment per komponen.
 """
 
 _CASE_3_POLES = [

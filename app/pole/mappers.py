@@ -13,17 +13,22 @@ Report layout (numbered slots of the legacy PDF, "・・・O.K" text) is not bui
 here: that is the gateway report formatter's job.
 """
 
-from math import fsum
+from math import fsum, pi
 
 from app.engine.calculation.gravity import gravity_for_standard
 from app.engine.calculation.result import (
+    DirectObjectCalculationResult,
+    OverheadWireCalculationResult,
+    PoleCalculationResult,
     Standard7CalculationResult,
     Standard34CalculationResult,
 )
 from app.engine.calculation.rounding import CalculationValueType, rounding_profile_for
 from app.engine.domain.arm import ArmPart
+from app.engine.domain.direct_object import DirectObject, DirectObjectType
 from app.engine.domain.materials import get_pole_material
-from app.engine.domain.pole import PoleSectionProperties
+from app.engine.domain.overhead_wire import OverheadWire
+from app.engine.domain.pole import PoleObject, PoleSectionProperties
 from app.engine.domain.standards import DesignStandard
 from app.pole.schemas import PoleStandard3Request, PoleStandard7Request
 
@@ -428,11 +433,16 @@ def map_standard_7(
     wire_results,
     arm_parts: tuple[ArmPart, ...],
     arm_results,
+    poles: tuple[PoleObject, ...],
+    pole_results: tuple[PoleCalculationResult, ...],
+    direct_objects: tuple[DirectObject, ...],
+    direct_object_results: tuple[DirectObjectCalculationResult, ...],
 ) -> dict:
     rounding = rounding_profile_for(standard.code)
+    gravity = gravity_for_standard(standard.code)
     seismic_policy = standard.seismic_policy
     arms = [
-        _arm_7(standard, part, result)
+        _arm_7(standard, rounding, part, result)
         for part, result in zip(arm_parts, arm_results, strict=True)
     ]
     evaluated_positions = [_evaluated_position_7(rounding, result) for result in positions]
@@ -451,31 +461,40 @@ def map_standard_7(
             },
         ),
         "overhead_wires": [
-            {
-                **_overhead_wire(rounding, wire, result),
-                "seismic_load_n": result.seismic_load_n,
-                "seismic_tension_n": result.seismic_tension_n,
-            }
+            _overhead_wire_7(rounding, wire, result)
             for wire, result in zip(wires, wire_results, strict=True)
         ],
         "arms": arms,
         "pole_sections": [
-            _pole_section(pole, section)
-            for pole, section in zip(request.poles, pole_sections, strict=True)
+            _pole_section_7(rounding, gravity, sent, pole, section, result)
+            for sent, pole, section, result in zip(
+                request.poles, poles, pole_sections, pole_results, strict=True
+            )
+        ],
+        "direct_objects": [
+            _direct_object_7(rounding, item, result)
+            for item, result in zip(direct_objects, direct_object_results, strict=True)
         ],
         "evaluated_positions": evaluated_positions,
     }
 
 
-def _arm_7(standard: DesignStandard, part: ArmPart, result) -> dict:
+def _arm_7(standard: DesignStandard, rounding, part: ArmPart, result) -> dict:
     arm = _arm(standard, part, result)
+    arm["specification"]["fix_load_per_meter_n_m"] = result.specification.fix_load_per_meter_n_m
     for item, engine_item in zip(arm["objects"], result.object_results, strict=True):
         item.update(
+            mass_kg=engine_item.mass_kg,
             side_wind_load_n=engine_item.side_wind_load_n,
             seismic_load_n=engine_item.seismic_load_n,
             seismic_moment_nm=engine_item.seismic_moment_at_arm_support_nm,
         )
     arm["totals"].update(
+        # Arm body and objects, each at its front.
+        front_wind_load_n=rounding.apply(
+            fsum(item.front_wind_load_n for item in result.object_results),
+            CalculationValueType.LOAD,
+        ),
         seismic_load_n=result.total_seismic_load_n,
         seismic_moment_nm=result.total_seismic_moment_at_arm_support_nm,
     )
@@ -503,6 +522,7 @@ def _evaluated_position_7(rounding, result: Standard7CalculationResult) -> dict:
     wire_by_case = {
         item.direction: item for item in result.overhead_wire_aggregation.directional_totals
     }
+    wire = result.overhead_wire_aggregation
     return {
         "evaluated_position_m": result.evaluated_position_m,
         "pole_name": result.evaluated_pole_name,
@@ -518,6 +538,20 @@ def _evaluated_position_7(rounding, result: Standard7CalculationResult) -> dict:
         "vertical_fix_load_n": result.total_fix_load_n,
         "seismic_load_n": result.total_seismic_load_n,
         "seismic_moment_nm": result.total_seismic_moment_nm,
+        "seismic_tension_n": wire.total_seismic_tension_n,
+        # Seismic load plus the wire seismic tension; the same in every direction.
+        "resultant_seismic_load_n": rounding.apply(
+            result.total_seismic_load_n + abs(wire.total_seismic_tension_n),
+            CalculationValueType.LOAD,
+        ),
+        "component_totals": {
+            name: {
+                "fix_load_n": aggregation.total_fix_load_n,
+                "seismic_load_n": aggregation.total_seismic_load_n,
+                "seismic_moment_nm": aggregation.total_seismic_moment_nm,
+            }
+            for name, aggregation in _components(result).items()
+        },
         "wind_cases": [
             {
                 "code": case.wind_case_name,
@@ -525,11 +559,27 @@ def _evaluated_position_7(rounding, result: Standard7CalculationResult) -> dict:
                 "load_rows": _load_rows(rounding, result, case.wind_case_name, seismic=True),
                 "totals": {
                     "wind_load_n": case.total_wind_load_n,
+                    "wind_load_x_n": case.total_wind_load_x_n,
+                    "wind_load_y_n": case.total_wind_load_y_n,
                     "wind_tension_n": wire_by_case[case.wind_case_name].total_wind_tension_n,
+                    "wind_tension_x_n": wire_by_case[case.wind_case_name].total_wind_tension_x_n,
+                    "wind_tension_y_n": wire_by_case[case.wind_case_name].total_wind_tension_y_n,
                     "resultant_horizontal_load_n": case.resultant_wind_load_n,
+                    "resultant_horizontal_load_x_n": case.resultant_wind_load_x_n,
+                    "resultant_horizontal_load_y_n": case.resultant_wind_load_y_n,
                     "fix_load_moment_x_nm": case.moment_due_to_fix_load_x_nm,
                     "fix_load_moment_y_nm": case.moment_due_to_fix_load_y_nm,
                     "fix_load_moment_nm": case.moment_due_to_fix_load_nm,
+                    # Wind only: no fix load and no wire tension.
+                    "wind_moment_nm": _wind_moment_total(rounding, result, case.wind_case_name),
+                    "wind_moment_x_nm": _wind_moment(rounding, result, case.wind_case_name, "x"),
+                    "wind_moment_y_nm": _wind_moment(rounding, result, case.wind_case_name, "y"),
+                    "wind_tension_moment_x_nm": (
+                        wire_by_case[case.wind_case_name].total_wind_tension_moment_x_nm
+                    ),
+                    "wind_tension_moment_y_nm": (
+                        wire_by_case[case.wind_case_name].total_wind_tension_moment_y_nm
+                    ),
                     "combined_moment_x_nm": case.combined_wind_moment_x_nm,
                     "combined_moment_y_nm": case.combined_wind_moment_y_nm,
                     "combined_moment_nm": case.combined_wind_moment_nm,
@@ -540,6 +590,7 @@ def _evaluated_position_7(rounding, result: Standard7CalculationResult) -> dict:
                     "combined_seismic_moment_nm": case.combined_seismic_moment_nm,
                     "seismic_torsional_moment_nm": case.seismic_torsional_moment_nm,
                 },
+                "component_totals": _wind_components(rounding, result, case.wind_case_name),
                 "checks": _pole_checks_7(material, stress_by_case[case.wind_case_name]),
             }
             for case in result.direction_results
@@ -593,3 +644,159 @@ def _pole_checks_7(material, stress) -> list[dict]:
             ),
         ]
     return checks
+
+
+# ===== Design standard 7: values of each component =====
+def _components(result: Standard7CalculationResult) -> dict:
+    return {
+        "pole": result.pole_aggregation,
+        "direct_object": result.direct_object_aggregation,
+        "arm": result.arm_aggregation,
+        "overhead_wire": result.overhead_wire_aggregation,
+    }
+
+
+def _in_direction(aggregation, case_name: str):
+    return next(item for item in aggregation.directional_totals if item.direction == case_name)
+
+
+def _wind_moment(rounding, result: Standard7CalculationResult, case_name: str, axis: str) -> float:
+    """Wind moment about one axis: pole, direct objects, arms and wires, without tension."""
+    return rounding.apply(
+        fsum(
+            getattr(_in_direction(aggregation, case_name), f"total_wind_moment_{axis}_nm")
+            for aggregation in _components(result).values()
+        ),
+        CalculationValueType.MOMENT,
+    )
+
+
+def _wind_moment_total(rounding, result: Standard7CalculationResult, case_name: str) -> float:
+    """Sum of the wind moment of the four components in one direction."""
+    return rounding.apply(
+        fsum(
+            item["wind_moment_nm"]
+            for item in _wind_components(rounding, result, case_name).values()
+        ),
+        CalculationValueType.MOMENT,
+    )
+
+
+def _wind_components(rounding, result: Standard7CalculationResult, case_name: str) -> dict:
+    """Wind load and wind moment of each component in one direction.
+
+    The pole moment is the sum of every step pole above the position. The arm
+    moment is the sum, over every arm object, of load centre height x wind load
+    in this direction, each product rounded first.
+    """
+    pole = _in_direction(result.pole_aggregation, case_name)
+    direct = _in_direction(result.direct_object_aggregation, case_name)
+    arm = _in_direction(result.arm_aggregation, case_name)
+    wire = _in_direction(result.overhead_wire_aggregation, case_name)
+
+    def moment_sum(values):
+        return rounding.apply(fsum(values), CalculationValueType.MOMENT)
+
+    arm_moments = [
+        rounding.apply(
+            item.load_center_height_m * _in_case(item.directional_results, case_name).wind_load_n,
+            CalculationValueType.MOMENT,
+        )
+        for part in result.arm_aggregation.arm_results
+        for item in part.object_results
+    ]
+    return {
+        "pole": {
+            "wind_load_n": pole.total_wind_load_n,
+            "wind_moment_nm": moment_sum(
+                item.wind_moment_nm for item in result.pole_aggregation.pole_results
+            ),
+        },
+        "direct_object": {
+            "wind_load_n": direct.total_wind_load_n,
+            "wind_moment_nm": direct.total_wind_moment_nm,
+        },
+        "arm": {"wind_load_n": arm.total_wind_load_n, "wind_moment_nm": moment_sum(arm_moments)},
+        "overhead_wire": {
+            "wind_load_n": wire.total_wind_load_n,
+            "wind_moment_nm": wire.total_wind_moment_nm,
+        },
+    }
+
+
+def _pole_section_7(rounding, gravity: float, sent, pole: PoleObject,
+                    section: PoleSectionProperties, result: PoleCalculationResult) -> dict:
+    """The d_st 3 section plus the whole step pole, from its lower end.
+
+    The fix load per metre follows the New JIL sequence: mass per metre at the
+    average of the lower and upper size, then x gravity, each rounded.
+    """
+    mass_per_meter = rounding.apply(
+        pole.mass_kg(1.0, pole.diameter_lower_mm, pole.diameter_upper_mm),
+        CalculationValueType.WEIGHT_PER_METER,
+    )
+    return {
+        **_pole_section(sent, section),
+        "section_modulus_cm3": section.section_modulus_cm3,
+        "length_m": result.geometry.full_length_m,
+        "mass_kg": result.mass_kg,
+        "fix_load_n": result.fix_load_n,
+        "fix_load_per_meter_n_m": rounding.apply(
+            mass_per_meter * gravity, CalculationValueType.WEIGHT_PER_METER
+        ),
+        "projected_area_m2": result.projected_area_m2,
+    }
+
+
+def _direct_object_7(rounding, item: DirectObject, result: DirectObjectCalculationResult) -> dict:
+    """Wind load on the front and on the side, independent of the wind direction.
+    An Omni object takes the front load from every side."""
+
+    def wind_load(area_m2: float) -> float:
+        return rounding.apply(
+            area_m2 * result.quantity * result.cf * result.wind_pressure_n_m2,
+            CalculationValueType.LOAD,
+        )
+
+    return {
+        "name": result.object_name,
+        "quantity": result.quantity,
+        "mass_kg": result.total_mass_kg,
+        "front_wind_load_n": wind_load(item.front_area_m2),
+        "side_wind_load_n": wind_load(
+            item.front_area_m2 if item.object_type is DirectObjectType.OMNI else item.side_area_m2
+        ),
+    }
+
+
+def _overhead_wire_7(rounding, wire: OverheadWire, result: OverheadWireCalculationResult) -> dict:
+    """The d_st 3 wire plus seismic values, mass, front wind load, and the line
+    load and tension with the wind straight (90 degrees) and oblique (45 degrees)
+    to the wire."""
+
+    def at_angle_of_attack(angle_rad: float) -> dict:
+        # Angle of attack = fixed angle - wind angle.
+        wind_angle_rad = wire.fixed_angle_rad - angle_rad
+        line_load = rounding.apply(
+            wire.combined_wind_line_load_n_m(result.wind_pressure_n_m2, result.cf, wind_angle_rad),
+            CalculationValueType.WIRE_LOAD_COMBINATION,
+        )
+        return {
+            "combined_wind_line_load_n_m": line_load,
+            "wind_tension_n": rounding.apply(
+                wire.tension_from_line_load(line_load), CalculationValueType.LOAD
+            ),
+        }
+
+    return {
+        **_overhead_wire(rounding, wire, result),
+        "mass_kg": result.total_mass_kg,
+        "front_wind_load_n": rounding.apply(
+            result.projected_area_m2 * result.cf * result.wind_pressure_n_m2,
+            CalculationValueType.LOAD,
+        ),
+        "straight_wind": at_angle_of_attack(pi / 2),
+        "oblique_wind": at_angle_of_attack(pi / 4),
+        "seismic_load_n": result.seismic_load_n,
+        "seismic_tension_n": result.seismic_tension_n,
+    }
