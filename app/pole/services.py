@@ -5,6 +5,7 @@ from app.engine.calculation.standard_34_workflow import Standard34CalculationWor
 from app.engine.calculation.standard_arm_workflows import Standard7CalculationWorkflow
 from app.engine.calculation_service import CalculationService
 from app.engine.domain.arm import ArmAssembly, ArmPart
+from app.engine.domain.direct_object import DirectObject
 from app.engine.domain.loads import OverdesignFactor
 from app.engine.domain.overhead_wire import OverheadWire
 from app.engine.domain.pole import PoleObject
@@ -26,7 +27,7 @@ from app.shared.errors import CalculationInputError
 
 @dataclass(frozen=True)
 class _Calculated:
-    """Engine results every design standard reports, ready for its mapper."""
+    """Engine results ready for the mapper of a design standard."""
 
     standard: DesignStandard
     positions: tuple
@@ -35,6 +36,24 @@ class _Calculated:
     wire_results: tuple
     arm_parts: tuple[ArmPart, ...]
     arm_results: tuple
+    # Design standard 7 only: each step pole and direct object on its own,
+    # calculated at its own lower end or elevation.
+    poles: tuple[PoleObject, ...]
+    pole_results: tuple
+    direct_objects: tuple[DirectObject, ...]
+    direct_object_results: tuple
+
+    def shared(self) -> dict:
+        """The results every design standard reports."""
+        return {
+            "standard": self.standard,
+            "positions": self.positions,
+            "pole_sections": self.pole_sections,
+            "wires": self.wires,
+            "wire_results": self.wire_results,
+            "arm_parts": self.arm_parts,
+            "arm_results": self.arm_results,
+        }
 
 
 def calculate_pole(request: PoleCalculationRequest) -> dict:
@@ -67,7 +86,7 @@ def calculate_pole(request: PoleCalculationRequest) -> dict:
                 arm_assembly=ArmAssembly(arm_parts) if arm_parts else None,
             ),
         )
-        return map_standard_3(request=request, **vars(calculated))
+        return map_standard_3(request=request, **calculated.shared())
 
     raise TypeError(f"Unsupported request {type(request).__name__}")
 
@@ -85,14 +104,13 @@ def _calculate(request, *, standard_options: dict, build_workflow) -> _Calculate
         wires = tuple(to_overhead_wire(wire) for wire in request.overhead_wires)
         arm_parts = tuple(to_arm_part(arm) for arm in request.arms)
         poles: tuple[PoleObject, ...] = tuple(to_pole_object(pole) for pole in request.poles)
+        direct_objects = tuple(to_direct_object(item) for item in request.direct_objects)
+        assembly = PoleAssembly(list(poles), base_elevation_m=request.base_elevation_m)
         workflow = build_workflow(
             {
                 "design_standard": standard,
-                "pole_assembly": PoleAssembly(
-                    list(poles),
-                    base_elevation_m=request.base_elevation_m,
-                ),
-                "direct_objects": [to_direct_object(item) for item in request.direct_objects],
+                "pole_assembly": assembly,
+                "direct_objects": list(direct_objects),
                 "overhead_wires": wires,
                 "overdesign_factor": OverdesignFactor(request.overdesign_factor),
             },
@@ -121,6 +139,16 @@ def _calculate(request, *, standard_options: dict, build_workflow) -> _Calculate
             )
             for part in arm_parts
         )
+        # The whole step pole, from its lower end, and each direct object at its
+        # own elevation: the values of the item itself, not of a position.
+        pole_results = tuple(
+            workflow.pole_calculator.calculate_one(pole, assembly.segment_bounds(pole)[0])
+            for pole in poles
+        )
+        direct_object_results = tuple(
+            workflow.direct_object_calculator.calculate_one(item, item.elevation_m)
+            for item in direct_objects
+        )
     except ValueError as error:
         # Engine rules beyond the schema, e.g. a position above every pole top.
         raise CalculationInputError(str(error)) from error
@@ -133,4 +161,8 @@ def _calculate(request, *, standard_options: dict, build_workflow) -> _Calculate
         wire_results=wire_results,
         arm_parts=arm_parts,
         arm_results=arm_results,
+        poles=poles,
+        pole_results=pole_results,
+        direct_objects=direct_objects,
+        direct_object_results=direct_object_results,
     )
