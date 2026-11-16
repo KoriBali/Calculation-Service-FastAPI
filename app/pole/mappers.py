@@ -72,7 +72,10 @@ def map_standard_3(
         _arm(standard, part, result)
         for part, result in zip(arm_parts, arm_results, strict=True)
     ]
-    evaluated_positions = [_evaluated_position(rounding, result) for result in positions]
+    arm_objects = _arm_objects_by_name(arms)
+    evaluated_positions = [
+        _evaluated_position(rounding, result, arm_objects) for result in positions
+    ]
     return {
         "schema_version": SCHEMA_VERSION,
         "design_standard": {"code": int(standard.code), "name": standard.name},
@@ -247,7 +250,12 @@ def _pole_section(pole, section: PoleSectionProperties) -> dict:
 
 
 # ===== Evaluated positions =====
-def _evaluated_position(rounding, result: Standard34CalculationResult) -> dict:
+def _arm_objects_by_name(arms: list[dict]) -> dict[str, list[dict]]:
+    """Mapped arm objects per arm name; quantity and Cf for the load rows."""
+    return {arm["name"]: arm["objects"] for arm in arms}
+
+
+def _evaluated_position(rounding, result: Standard34CalculationResult, arm_objects) -> dict:
     section = result.section_properties
     arm_results = () if result.arm_aggregation is None else result.arm_aggregation.arm_results
     return {
@@ -264,7 +272,7 @@ def _evaluated_position(rounding, result: Standard34CalculationResult) -> dict:
             {
                 "code": case.wind_case_name,
                 "angle_deg": case.wind_direction_deg,
-                "load_rows": _load_rows(rounding, result, case.wind_case_name),
+                "load_rows": _load_rows(result, case.wind_case_name, arm_objects),
                 "totals": {
                     "wind_load_n": case.total_wind_load_n,
                     "wind_tension_n": case.total_wind_tension_n,
@@ -311,7 +319,7 @@ def _row(kind, name, *, quantity, fix_load_n, projected_area_m2, wind_coefficien
 
 def _seismic_row(row: dict, *, seismic_load_n, seismic_moment_nm,
                  wind_torque_nm=None, seismic_torque_nm=None) -> dict:
-    """d_st 7 row: the d_st 3 row plus seismic values; torque only on ARM rows."""
+    """d_st 7 row: the d_st 3 row plus seismic values; torque only on ARM and ARM_OBJECT rows."""
     return {
         **row,
         "seismic_load_n": seismic_load_n,
@@ -325,11 +333,13 @@ def _in_case(directional_results, case_name: str):
     return next(item for item in directional_results if item.direction == case_name)
 
 
-def _load_rows(rounding, result, case_name: str, *, seismic: bool = False) -> list[dict]:
-    """Report order: arms, direct objects, overhead wires, poles from the top.
+def _load_rows(result, case_name: str, arm_objects: dict[str, list[dict]],
+               *, seismic: bool = False) -> list[dict]:
+    """Report order: per arm the arm body (ARM) then its mounted objects (ARM_OBJECT),
+    then direct objects, overhead wires, and poles from the top.
 
     ``seismic`` (d_st 7) adds seismic load and moment to every row, and the
-    wind and seismic torque of each arm to the ARM rows.
+    wind and seismic torque to the ARM and ARM_OBJECT rows.
     """
     def add(row: dict, item) -> None:
         if seismic:
@@ -340,38 +350,34 @@ def _load_rows(rounding, result, case_name: str, *, seismic: bool = False) -> li
             )
         rows.append(row)
 
-    def moment_sum(values):
-        return rounding.apply(fsum(values), CalculationValueType.MOMENT)
-
     rows = []
     if result.arm_aggregation is not None:
         for arm in result.arm_aggregation.arm_results:
-            in_case = [_in_case(obj.directional_results, case_name) for obj in arm.object_results]
-            # One arm part is one row: area and Cf live per object in arms[].
-            row = _row(
-                "ARM", arm.arm_name,
-                quantity=1,
-                fix_load_n=arm.total_fix_load_n,
-                projected_area_m2=None,
-                wind_coefficient=None,
-                wind_load_n=rounding.apply(
-                    fsum(item.wind_load_n for item in in_case),
-                    CalculationValueType.LOAD,
-                ),
-                load_center_height_m=arm.object_results[0].load_center_height_m,
-                wind_moment_nm=None,
-            )
-            if seismic:
-                row = _seismic_row(
-                    row,
-                    seismic_load_n=arm.total_seismic_load_n,
-                    seismic_moment_nm=moment_sum(
-                        obj.seismic_moment_at_pole_nm for obj in arm.object_results
-                    ),
-                    wind_torque_nm=moment_sum(item.wind_torque_nm for item in in_case),
-                    seismic_torque_nm=moment_sum(item.seismic_torque_nm for item in in_case),
+            mapped = arm_objects[arm.arm_name]
+            for obj in arm.object_results:
+                wind = _in_case(obj.directional_results, case_name)
+                meta = mapped[obj.object_index]
+                # objects[0] is the arm body; the moment at the pole has x and y parts.
+                row = _row(
+                    "ARM" if obj.object_index == 0 else "ARM_OBJECT",
+                    arm.arm_name if obj.object_index == 0 else obj.object_name,
+                    quantity=meta["quantity"],
+                    fix_load_n=obj.fix_load_n,
+                    projected_area_m2=wind.directional_projected_area_m2,
+                    wind_coefficient=meta["wind_coefficient"],
+                    wind_load_n=wind.wind_load_n,
+                    load_center_height_m=obj.load_center_height_m,
+                    wind_moment_nm=None,
                 )
-            rows.append(row)
+                if seismic:
+                    row = _seismic_row(
+                        row,
+                        seismic_load_n=obj.seismic_load_n,
+                        seismic_moment_nm=obj.seismic_moment_at_pole_nm,
+                        wind_torque_nm=wind.wind_torque_nm,
+                        seismic_torque_nm=wind.seismic_torque_nm,
+                    )
+                rows.append(row)
     for item in result.direct_object_aggregation.direct_object_results:
         wind = _in_case(item.directional_results, case_name)
         add(_row(
@@ -445,7 +451,10 @@ def map_standard_7(
         _arm_7(standard, rounding, part, result)
         for part, result in zip(arm_parts, arm_results, strict=True)
     ]
-    evaluated_positions = [_evaluated_position_7(rounding, result) for result in positions]
+    arm_objects = _arm_objects_by_name(arms)
+    evaluated_positions = [
+        _evaluated_position_7(rounding, result, arm_objects) for result in positions
+    ]
     return {
         "schema_version": SCHEMA_VERSION,
         "design_standard": {"code": int(standard.code), "name": standard.name},
@@ -513,7 +522,7 @@ def _arm_7(standard: DesignStandard, rounding, part: ArmPart, result) -> dict:
     return arm
 
 
-def _evaluated_position_7(rounding, result: Standard7CalculationResult) -> dict:
+def _evaluated_position_7(rounding, result: Standard7CalculationResult, arm_objects) -> dict:
     section = result.section_properties
     material = get_pole_material(result.material_name)
     stress_by_case = {
@@ -556,7 +565,9 @@ def _evaluated_position_7(rounding, result: Standard7CalculationResult) -> dict:
             {
                 "code": case.wind_case_name,
                 "angle_deg": case.wind_direction_deg,
-                "load_rows": _load_rows(rounding, result, case.wind_case_name, seismic=True),
+                "load_rows": _load_rows(
+                    result, case.wind_case_name, arm_objects, seismic=True
+                ),
                 "totals": {
                     "wind_load_n": case.total_wind_load_n,
                     "wind_load_x_n": case.total_wind_load_x_n,
