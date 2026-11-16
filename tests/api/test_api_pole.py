@@ -107,10 +107,14 @@ def test_case_3_matches_python_calc_report_values(client):
     }
     assert position["vertical_fix_load_n"] == 1343.4
     (case,) = position["wind_cases"]
-    assert [row["kind"] for row in case["load_rows"]] == ["ARM", "OVERHEAD_WIRE", "POLE", "POLE"]
-    arm_row = case["load_rows"][0]
-    assert arm_row["wind_load_n"] == 304.8
-    assert (arm_row["projected_area_m2"], arm_row["wind_coefficient"]) == (None, None)
+    assert [row["kind"] for row in case["load_rows"]] == ["ARM", "ARM_OBJECT", "OVERHEAD_WIRE", "POLE", "POLE"]
+    arm_row, object_row = case["load_rows"][:2]
+    assert (arm_row["name"], arm_row["fix_load_n"], arm_row["wind_load_n"]) == ("Arm-1", 9.4, 17.0)
+    assert (arm_row["projected_area_m2"], arm_row["wind_coefficient"]) == (0.011, 0.7)
+    assert (object_row["name"], object_row["fix_load_n"], object_row["wind_load_n"]) == ("AO-11", 137.3, 287.8)
+    # Arm body plus its objects equals the whole arm.
+    assert round(arm_row["fix_load_n"] + object_row["fix_load_n"], 1) == data["arms"][0]["totals"]["fix_load_n"]
+    assert round(arm_row["wind_load_n"] + object_row["wind_load_n"], 1) == 304.8
     assert case["totals"]["wind_load_n"] == 2398.4
     assert case["totals"]["arm_fix_load_moment_nm"] == 25.5
     assert case["totals"]["resultant_horizontal_load_n"] == 2623.7
@@ -243,8 +247,10 @@ def test_new_jil_matches_python_calc_values(client):
     assert checks["pole_wind_torsion"]["allowable_stress_n_mm2"] == 136  # STK400 short-term shear
     assert checks["pole_fix_load_bending"]["allowable_stress_n_mm2"] == 156
     assert "maximum_shear_stress_n_mm2" in checks["pole_wind_combined"]
-    arm_row = north["load_rows"][0]
-    assert (arm_row["kind"], arm_row["wind_torque_nm"], arm_row["seismic_torque_nm"]) == ("ARM", -41.3, -12.3)
+    arm_row, object_row = north["load_rows"][:2]
+    assert (arm_row["kind"], arm_row["wind_torque_nm"], arm_row["seismic_torque_nm"]) == ("ARM", -1.52, -0.405)
+    assert (object_row["kind"], object_row["wind_torque_nm"], object_row["seismic_torque_nm"]) == ("ARM_OBJECT", -39.8, -11.9)
+    assert (object_row["seismic_load_n"], object_row["seismic_moment_nm"]) == (65.9, 659.0)
     assert {row["kind"]: row["wind_torque_nm"] for row in north["load_rows"]}["POLE"] is None
 
     assert data["summary"] == {

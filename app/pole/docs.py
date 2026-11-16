@@ -60,11 +60,13 @@ Envelope `{"success": true, "data": {...}}`. Semua nilai sudah dibulatkan engine
 - `evaluated_positions[]`: satu item per elevasi: `section` tiang (diameter,
   tebal, dan section modulus; d_st 7 juga moment of inertia dan polar moment of
   inertia), total FixLoad vertikal (d_st 7 juga total seismic load dan moment),
-  dan `wind_cases[]`. Tiap wind case berisi `load_rows[]` (urutan ARM,
-  DIRECT_OBJECT, OVERHEAD_WIRE, POLE dari atas), `totals`, dan `checks`. Baris
-  ARM tidak punya `projected_area_m2` / `wind_coefficient` (`null`); nilainya ada
-  per objek di `arms[].objects[]`. Di d_st 7 setiap baris punya `seismic_load_n`
-  dan `seismic_moment_nm`, baris ARM juga `wind_torque_nm` dan
+  dan `wind_cases[]`. Tiap wind case berisi `load_rows[]` (urutan per lengan:
+  ARM lalu ARM_OBJECT; lalu DIRECT_OBJECT, OVERHEAD_WIRE, POLE dari atas),
+  `totals`, dan `checks`. Baris ARM = badan lengan saja, setiap objek di lengan
+  jadi baris ARM_OBJECT sendiri (urutan `arms[].objects[]`, terjauh dulu); jumlah
+  keduanya = seluruh lengan. Baris ARM dan ARM_OBJECT tidak punya
+  `wind_moment_nm` (`null`). Di d_st 7 setiap baris punya `seismic_load_n`
+  dan `seismic_moment_nm`, baris ARM dan ARM_OBJECT juga `wind_torque_nm` dan
   `seismic_torque_nm`, dan `totals` berisi moment FixLoad, torsi angin, dan
   moment seismic per arah.
 - Check `*_torsion` memakai `moment_nm` = moment torsi dan allowable = shear
